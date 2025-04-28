@@ -19,7 +19,7 @@ def run_dummy_server():
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
 BOT_TOKEN = "7685520910:AAH5Yx8uhW0Ry3ozQjsMjNPGlMBUadkfTno"
-ALLOWED_USER_ID = 5826122049
+ALLOWED_USER_IDS = [5826122049, 6887361815, 581331192]
 TEMPLATE_FILE = "template_zayava.docx"
 OUTPUT_DOCX = "zayava_ready.docx"
 LICENSE_DATE_FILE = "license_date.json"
