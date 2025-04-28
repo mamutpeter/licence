@@ -1,21 +1,27 @@
 import os
 import json
-import time
+import asyncio
 from datetime import datetime, timedelta
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, Bot
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from flask import Flask, request
+from telegram import Update, Bot, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, Dispatcher
+)
 from docx import Document
 from apscheduler.schedulers.background import BackgroundScheduler
-import asyncio
 
 BOT_TOKEN = "7685520910:AAH5Yx8uhW0Ry3ozQjsMjNPGlMBUadkfTno"
-ALLOWED_USER_IDS = [5826122049, 6887361815]  # список дозволених
+WEBHOOK_URL = "https://your-app-name.onrender.com/webhook"  # <- сюди своє посилання
+PORT = int(os.environ.get('PORT', 10000))
+
+ALLOWED_USER_IDS = [5826122049, 6887361815]
 TEMPLATE_FILE = "template_zayava.docx"
 OUTPUT_DOCX = "zayava_ready.docx"
 LICENSE_DATE_FILE = "license_date.json"
 
 user_states = {}
 store_context = {}
+app = Flask(__name__)
 
 keyboard = ReplyKeyboardMarkup(
     [["➕ Додати оплату", "✅ Завершити"]],
@@ -84,7 +90,6 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     args = ctx.args
-
     if not args:
         await update.message.reply_text(
             """👋 Вітаю! Щоб розпочати роботу:
@@ -182,22 +187,24 @@ def reminder_check():
     except Exception as e:
         print("❌ Нагадування: помилка:", e)
 
+@app.route('/webhook', methods=['POST'])
+async def webhook():
+    update = Update.de_json(await request.get_json(force=True), app.bot)
+    await app.dispatcher.process_update(update)
+    return "ok"
+
 if __name__ == "__main__":
-    print("🔄 Ініціалізація Telegram-бота...")
+    print("🔄 Старт сервера для Webhook...")
+    bot = Bot(BOT_TOKEN)
+    app.bot = bot
+    app.dispatcher = Dispatcher(bot, None, workers=4)
 
-    while True:
-        try:
-            app = ApplicationBuilder().token(BOT_TOKEN).build()
-            app.add_handler(CommandHandler("start", start))
-            app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
+    app.dispatcher.add_handler(CommandHandler("start", start))
+    app.dispatcher.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
 
-            scheduler = BackgroundScheduler()
-            scheduler.add_job(reminder_check, "interval", hours=12)
-            scheduler.start()
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(reminder_check, "interval", hours=12)
+    scheduler.start()
 
-            print("✅ Бот запущено. Очікую команди...")
-            app.run_polling()
-        except Exception as e:
-            print(f"❌ Помилка в роботі бота: {e}")
-            print("♻️ Перезапуск через 5 секунд...")
-            time.sleep(5)
+    asyncio.run(bot.set_webhook(WEBHOOK_URL))
+    app.run(host="0.0.0.0", port=PORT)
