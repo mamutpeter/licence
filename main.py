@@ -6,6 +6,17 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 from docx import Document
 from apscheduler.schedulers.background import BackgroundScheduler
 import asyncio
+from http.server import SimpleHTTPRequestHandler, HTTPServer
+import threading
+
+# 🛜 Стартуємо dummy HTTP сервер на порт 8080 (або той, що Render задасть)
+def run_dummy_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("", port), SimpleHTTPRequestHandler)
+    print(f"🛜 Dummy HTTP Server running on port {port}")
+    server.serve_forever()
+
+threading.Thread(target=run_dummy_server, daemon=True).start()
 
 BOT_TOKEN = "7685520910:AAH5Yx8uhW0Ry3ozQjsMjNPGlMBUadkfTno"
 ALLOWED_USER_ID = 5826122049
