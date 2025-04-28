@@ -114,8 +114,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if not args:
         await update.message.reply_text(
-            """👋 Вітаю! Щоб розпочати роботу:
-Натисни кнопку 📘 або введи /start <ID_магазину>
+            """👋 Вітаю! Щоб розпочати роботу введи /start <ID_магазину>
 
 Наприклад: /start 1""",
             reply_markup=start_keyboard
