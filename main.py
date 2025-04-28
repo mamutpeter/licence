@@ -11,7 +11,7 @@ from docx import Document
 from apscheduler.schedulers.background import BackgroundScheduler
 
 BOT_TOKEN = "7685520910:AAH5Yx8uhW0Ry3ozQjsMjNPGlMBUadkfTno"
-WEBHOOK_URL = "https://dochelp-ctqw.onrender.com/webhook"
+WEBHOOK_URL = "https://dochelp-ctqw.onrender.com"
 PORT = int(os.environ.get('PORT', 10000))
 
 ALLOWED_USER_IDS = [5826122049, 6887361815]
@@ -47,6 +47,8 @@ instruction_text = """
 4. Введи дату завершення ліцензії
 5. Бот згенерує заяву і нагадає за 3 дні
 """
+
+# ======= Функції =======
 
 def generate_docx(payments):
     doc = Document(TEMPLATE_FILE)
@@ -106,6 +108,7 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = update.message.text.strip()
+
     if text == "📘 Як користуватись":
         return await update.message.reply_text(instruction_text)
     if text == "📄 Завантажити список магазинів":
@@ -179,6 +182,8 @@ def reminder_check():
     except Exception as e:
         print("❌ Нагадування: помилка:", e)
 
+# ======= Старт серверу =======
+
 app = Flask(__name__)
 tg_app = ApplicationBuilder().token(BOT_TOKEN).build()
 tg_app.add_handler(CommandHandler("start", start))
@@ -189,13 +194,14 @@ scheduler.add_job(reminder_check, "interval", hours=12)
 scheduler.start()
 
 @app.route('/webhook', methods=['POST'])
-async def webhook():
-    data = await request.get_json(force=True)
+def webhook():
+    data = request.get_json(force=True)
     update = Update.de_json(data, tg_app.bot)
-    await tg_app.process_update(update)
+    asyncio.run(tg_app.process_update(update))
     return "ok"
 
 if __name__ == "__main__":
     print("🔄 Старт сервера для Webhook...")
-    asyncio.run(Bot(BOT_TOKEN).set_webhook(f"{WEBHOOK_URL}/webhook"))
+    bot = Bot(BOT_TOKEN)
+    asyncio.run(bot.set_webhook(f"{WEBHOOK_URL}/webhook"))
     app.run(host="0.0.0.0", port=PORT)
