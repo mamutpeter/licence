@@ -11,7 +11,7 @@ from docx import Document
 from apscheduler.schedulers.background import BackgroundScheduler
 
 BOT_TOKEN = "7685520910:AAH5Yx8uhW0Ry3ozQjsMjNPGlMBUadkfTno"
-WEBHOOK_URL = "https://your-app-name.onrender.com/webhook"  # <- сюди своє посилання
+WEBHOOK_URL = "https://dochelp-ctqw.onrender.com"  # <- сюди своє посилання
 PORT = int(os.environ.get('PORT', 10000))
 
 ALLOWED_USER_IDS = [5826122049, 6887361815]
