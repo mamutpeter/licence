@@ -1,25 +1,15 @@
 import os
 import json
+import time
 from datetime import datetime, timedelta
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 from docx import Document
 from apscheduler.schedulers.background import BackgroundScheduler
 import asyncio
-from http.server import SimpleHTTPRequestHandler, HTTPServer
-import threading
-
-# 🛜 Стартуємо dummy HTTP сервер на порт 8080 (або той, що Render задасть)
-def run_dummy_server():
-    port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("", port), SimpleHTTPRequestHandler)
-    print(f"🛜 Dummy HTTP Server running on port {port}")
-    server.serve_forever()
-
-threading.Thread(target=run_dummy_server, daemon=True).start()
 
 BOT_TOKEN = "7685520910:AAH5Yx8uhW0Ry3ozQjsMjNPGlMBUadkfTno"
-ALLOWED_USER_IDS = [5826122049, 6887361815, 581331192]
+ALLOWED_USER_IDS = [5826122049, 6887361815]  # список дозволених
 TEMPLATE_FILE = "template_zayava.docx"
 OUTPUT_DOCX = "zayava_ready.docx"
 LICENSE_DATE_FILE = "license_date.json"
@@ -42,36 +32,15 @@ start_keyboard = ReplyKeyboardMarkup(
 instruction_text = """
 📘 Інструкція користування ботом:
 
-👋 Вітаю у сервісі створення заяв для продовження ліцензії!
-
-1. Натисніть кнопку '📘 Як користуватись' або введіть команду: /start <ID магазину> (наприклад: /start 1)
-
-2. Після старту бот попросить:
-   – Код класифікації доходів бюджету
-   – Суму оплати
-   – Номер інструкції (платіжки)
+1. Натисни кнопку '📘 Як користуватись' або введи /start <ID>
+2. Введи по черзі:
+   – Код класифікації доходу
+   – Суму
+   – Номер інструкції
    – Дату інструкції
-
-3. Після введення даних:
-   – Натисніть ➕ Додати оплату (якщо потрібно додати ще один платіж)
-   – Або ✅ Завершити, щоб перейти до завершення
-
-4. Після завершення:
-   – Введіть дату закінчення ліцензії у форматі ДД.ММ.РРРР (наприклад: 01.06.2025)
-
-5. Бот:
-   – Згенерує заяву у форматі .docx
-   – Надішле її вам у чат
-   – Збереже дату закінчення ліцензії
-
-6. За 3 дні до закінчення ліцензії бот автоматично надішле нагадування.
-
-⚡ Якщо натиснути '📄 Завантажити список магазинів' — бот відправить актуальний список магазинів у PDF.
-
-📅 Дати обов'язково вводьте у форматі ДД.ММ.РРРР.
-
-Бажаємо успішної роботи! 🚀
-
+3. Натисни '✅ Завершити'
+4. Введи дату завершення ліцензії
+5. Бот згенерує заяву і нагадає за 3 дні
 """
 
 def generate_docx(payments):
@@ -110,12 +79,16 @@ def load_license_date():
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    if chat_id not in ALLOWED_USER_IDS:
+        await update.message.reply_text("⛔️ У вас немає доступу до цього бота.")
+        return
+
     args = ctx.args
 
     if not args:
         await update.message.reply_text(
-            """👋 Вітаю! Щоб розпочати роботу введи :
-            /start <ID_магазину>
+            """👋 Вітаю! Щоб розпочати роботу:
+Натисни кнопку 📘 або введи /start <ID_магазину>
 
 Наприклад: /start 1""",
             reply_markup=start_keyboard
@@ -129,6 +102,10 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def handle_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    if chat_id not in ALLOWED_USER_IDS:
+        await update.message.reply_text("⛔️ У вас немає доступу до цього бота.")
+        return
+
     text = update.message.text.strip()
 
     if text == "📘 Як користуватись":
@@ -195,7 +172,6 @@ def reminder_check():
         notify_date = license_end - timedelta(days=3)
         today = datetime.now().date()
         if today == notify_date.date():
-            from telegram import Bot
             async def send_notification():
                 bot = Bot(BOT_TOKEN)
                 await bot.send_message(
@@ -208,16 +184,20 @@ def reminder_check():
 
 if __name__ == "__main__":
     print("🔄 Ініціалізація Telegram-бота...")
-    try:
-        app = ApplicationBuilder().token(BOT_TOKEN).build()
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
 
-        scheduler = BackgroundScheduler()
-        scheduler.add_job(reminder_check, "interval", hours=12)
-        scheduler.start()
+    while True:
+        try:
+            app = ApplicationBuilder().token(BOT_TOKEN).build()
+            app.add_handler(CommandHandler("start", start))
+            app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
 
-        print("✅ Бот запущено. Очікую команди...")
-        app.run_polling()
-    except Exception as e:
-        print(f"❌ Помилка запуску бота: {e}")
+            scheduler = BackgroundScheduler()
+            scheduler.add_job(reminder_check, "interval", hours=12)
+            scheduler.start()
+
+            print("✅ Бот запущено. Очікую команди...")
+            app.run_polling()
+        except Exception as e:
+            print(f"❌ Помилка в роботі бота: {e}")
+            print("♻️ Перезапуск через 5 секунд...")
+            time.sleep(5)
