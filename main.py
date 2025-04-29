@@ -5,34 +5,29 @@ from datetime import datetime, timedelta
 from flask import Flask, request
 from telegram import Update, Bot, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+    Application, CommandHandler, MessageHandler, ContextTypes, filters
 )
 from docx import Document
 from apscheduler.schedulers.background import BackgroundScheduler
 
+# === Конфігурація ===
 BOT_TOKEN = "7685520910:AAH5Yx8uhW0Ry3ozQjsMjNPGlMBUadkfTno"
 WEBHOOK_URL = "https://dochelp-ctqw.onrender.com"
-PORT = int(os.environ.get('PORT', 10000))
-
-ALLOWED_USER_IDS = [5826122049, 6887361815]
+PORT = int(os.environ.get("PORT", 10000))
+LICENSE_DATE_FILE = "license_date.json"
 TEMPLATE_FILE = "template_zayava.docx"
 OUTPUT_DOCX = "zayava_ready.docx"
-LICENSE_DATE_FILE = "license_date.json"
+ALLOWED_USER_IDS = [5826122049, 6887361815]
 
+# === Змінні стану ===
 user_states = {}
 store_context = {}
 
-keyboard = ReplyKeyboardMarkup(
-    [["➕ Додати оплату", "✅ Завершити"]],
-    resize_keyboard=True,
-    one_time_keyboard=True
-)
+keyboard = ReplyKeyboardMarkup([["➕ Додати оплату", "✅ Завершити"]],
+                               resize_keyboard=True, one_time_keyboard=True)
 
-start_keyboard = ReplyKeyboardMarkup(
-    [["📘 Як користуватись", "📄 Завантажити список магазинів"]],
-    resize_keyboard=True,
-    one_time_keyboard=True
-)
+start_keyboard = ReplyKeyboardMarkup([["📘 Як користуватись", "📄 Завантажити список магазинів"]],
+                                     resize_keyboard=True, one_time_keyboard=True)
 
 instruction_text = """
 📘 Інструкція користування ботом:
@@ -110,12 +105,10 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text(instruction_text)
     if text == "📄 Завантажити список магазинів":
         return await update.message.reply_document(document=open("список_магазинів.pdf", "rb"))
-
     if chat_id not in user_states:
         return await update.message.reply_text("⚠️ Почніть з /start.")
 
     state = user_states[chat_id]
-
     if state["step"] == 6:
         if text == "➕ Додати оплату":
             state["step"] = 1
@@ -179,10 +172,9 @@ def reminder_check():
     except Exception as e:
         print("❌ Нагадування: помилка:", e)
 
-# === Flask + Telegram ===
-
+# === Telegram App + Flask Webhook ===
 app = Flask(__name__)
-tg_app = ApplicationBuilder().token(BOT_TOKEN).build()
+tg_app = Application.builder().token(BOT_TOKEN).build()
 tg_app.add_handler(CommandHandler("start", start))
 tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
 
@@ -190,19 +182,20 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(reminder_check, "interval", hours=12)
 scheduler.start()
 
+@app.before_first_request
+def initialize_bot():
+    asyncio.run(tg_app.initialize())
+    asyncio.create_task(tg_app.start())
+
 @app.route('/webhook', methods=['POST'])
-def webhook():
-    data = request.get_json(force=True)
+async def webhook():
+    data = await request.get_json(force=True)
     update = Update.de_json(data, tg_app.bot)
-
-    async def process():
-        await tg_app.initialize()
-        await tg_app.process_update(update)
-
-    asyncio.run(process())
+    await tg_app.process_update(update)
     return "ok"
 
 if __name__ == "__main__":
     print("🔄 Старт сервера для Webhook...")
-    asyncio.run(Bot(BOT_TOKEN).set_webhook(f"{WEBHOOK_URL}/webhook"))
+    bot = Bot(BOT_TOKEN)
+    asyncio.run(bot.set_webhook(f"{WEBHOOK_URL}/webhook"))
     app.run(host="0.0.0.0", port=PORT)
