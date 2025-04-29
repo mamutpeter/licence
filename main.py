@@ -14,33 +14,28 @@ from apscheduler.schedulers.background import BackgroundScheduler
 BOT_TOKEN = "7685520910:AAH5Yx8uhW0Ry3ozQjsMjNPGlMBUadkfTno"
 WEBHOOK_URL = "https://dochelp-ctqw.onrender.com"
 PORT = int(os.environ.get("PORT", 10000))
-LICENSE_DATE_FILE = "license_date.json"
+LICENSE_DATE_FILE = "license_dates.json"
 TEMPLATE_FILE = "template_zayava.docx"
 OUTPUT_DOCX = "zayava_ready.docx"
 ALLOWED_USER_IDS = [5826122049, 6887361815]
 
-# === Змінні стану ===
 user_states = {}
-store_context = {}
-
-keyboard = ReplyKeyboardMarkup([["➕ Додати оплату", "✅ Завершити"]],
-                               resize_keyboard=True, one_time_keyboard=True)
-
+keyboard = ReplyKeyboardMarkup([["➕ Додати оплату", "✅ Завершити"]], resize_keyboard=True, one_time_keyboard=True)
 start_keyboard = ReplyKeyboardMarkup([["📘 Як користуватись", "📄 Завантажити список магазинів"]],
                                      resize_keyboard=True, one_time_keyboard=True)
 
 instruction_text = """
 📘 Інструкція користування ботом:
 
-1. Натисни кнопку '📘 Як користуватись' або введи /start <ID>
+1. Натисни кнопку '📘 Як користуватись' або введи /start
 2. Введи по черзі:
+   – Назву магазину
    – Код класифікації доходу
    – Суму
    – Номер інструкції
    – Дату інструкції
-3. Натисни '✅ Завершити'
-4. Введи дату завершення ліцензії
-5. Бот згенерує заяву і нагадає за 3 дні
+3. Повтори для кожної оплати
+4. Натисни '✅ Завершити' і введи дату завершення ліцензії
 """
 
 def generate_docx(payments):
@@ -65,13 +60,19 @@ def generate_docx(payments):
         return path
     return None
 
-def save_license_date(date_str, chat_id):
-    with open(LICENSE_DATE_FILE, "w") as f:
-        json.dump({"license_end": date_str, "chat_id": chat_id}, f)
-
-def load_license_date():
+def save_license_date(date_str, chat_id, store_name):
     if not os.path.exists(LICENSE_DATE_FILE):
-        return None
+        data = {}
+    else:
+        with open(LICENSE_DATE_FILE, "r") as f:
+            data = json.load(f)
+    data[store_name] = {"license_end": date_str, "chat_id": chat_id}
+    with open(LICENSE_DATE_FILE, "w") as f:
+        json.dump(data, f, ensure_ascii=False)
+
+def load_license_dates():
+    if not os.path.exists(LICENSE_DATE_FILE):
+        return {}
     with open(LICENSE_DATE_FILE, "r") as f:
         return json.load(f)
 
@@ -81,18 +82,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔️ У вас немає доступу до цього бота.")
         return
 
-    args = context.args
-    if not args:
-        await update.message.reply_text(
-            "👋 Вітаю! Щоб розпочати роботу:\nНатисни кнопку 📘 або введи /start <ID_магазину>\n\nНаприклад: /start 1",
-            reply_markup=start_keyboard
-        )
-        return
-
-    store_id = args[0]
-    store_context[chat_id] = store_id
     user_states[chat_id] = {"step": 1, "data": {"payments": []}}
-    await update.message.reply_text(f"🧾 Магазин {store_id} активовано. Введіть код класифікації доходів бюджету:")
+    await update.message.reply_text("🧾 Почнемо. Введіть назву магазину:")
 
 async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -101,6 +92,7 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = update.message.text.strip()
+
     if text == "📘 Як користуватись":
         return await update.message.reply_text(instruction_text)
     if text == "📄 Завантажити список магазинів":
@@ -109,10 +101,11 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("⚠️ Почніть з /start.")
 
     state = user_states[chat_id]
+
     if state["step"] == 6:
         if text == "➕ Додати оплату":
             state["step"] = 1
-            return await update.message.reply_text("📥 Введіть код класифікації доходів бюджету:", reply_markup=ReplyKeyboardRemove())
+            return await update.message.reply_text("🧾 Введіть назву магазину:", reply_markup=ReplyKeyboardRemove())
         elif text == "✅ Завершити":
             await update.message.reply_text("📅 Введіть дату завершення ліцензії у форматі ДД.ММ.РРРР:")
             state["step"] = 7
@@ -122,12 +115,13 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if state["step"] == 7:
         try:
-            datetime.strptime(text, "%d.%m.%Y")
-            save_license_date(text, chat_id)
+            date_obj = datetime.strptime(text, "%d.%m.%Y")
+            for p in state["data"]["payments"]:
+                save_license_date(text, chat_id, p["store"])
             path = generate_docx(state["data"]["payments"])
             if path:
                 await update.message.reply_document(open(path, "rb"), reply_markup=ReplyKeyboardRemove())
-                await update.message.reply_text("✅ Заяву сформовано та збережено дату ліцензії!")
+                await update.message.reply_text("✅ Заяву сформовано та дати збережено!")
             else:
                 await update.message.reply_text("❌ Помилка генерації документа.")
         except ValueError:
@@ -135,44 +129,48 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_states.pop(chat_id)
         return
 
+    # Кроки вводу
     if state["step"] == 1:
-        state["current"] = {"code": text}
+        state["current"] = {"store": text}
         state["step"] = 2
-        return await update.message.reply_text("📥 Введіть суму:")
+        return await update.message.reply_text("📥 Введіть код класифікації доходів бюджету:")
     if state["step"] == 2:
-        state["current"]["amount"] = text
+        state["current"]["code"] = text
         state["step"] = 3
-        return await update.message.reply_text("📥 Введіть № інструкції:")
+        return await update.message.reply_text("📥 Введіть суму:")
     if state["step"] == 3:
-        state["current"]["instr_number"] = text
+        state["current"]["amount"] = text
         state["step"] = 4
-        return await update.message.reply_text("📥 Введіть дату інструкції:")
+        return await update.message.reply_text("📥 Введіть № інструкції:")
     if state["step"] == 4:
+        state["current"]["instr_number"] = text
+        state["step"] = 5
+        return await update.message.reply_text("📥 Введіть дату інструкції:")
+    if state["step"] == 5:
         state["current"]["instr_date"] = text
         state["data"]["payments"].append(state["current"])
         state["step"] = 6
         return await update.message.reply_text("➕ Додати ще одну оплату чи ✅ Завершити?", reply_markup=keyboard)
 
 def reminder_check():
-    data = load_license_date()
-    if not data:
-        return
-    try:
-        license_end = datetime.strptime(data["license_end"], "%d.%m.%Y")
-        notify_date = license_end - timedelta(days=3)
-        today = datetime.now().date()
-        if today == notify_date.date():
-            async def send_notification():
-                bot = Bot(BOT_TOKEN)
-                await bot.send_message(
-                    chat_id=data["chat_id"],
-                    text=f"⏰ Через 3 дні завершується дія ліцензії ({data['license_end']})! Виконай /start"
-                )
-            asyncio.run(send_notification())
-    except Exception as e:
-        print("❌ Нагадування: помилка:", e)
+    data = load_license_dates()
+    today = datetime.now().date()
+    for store, info in data.items():
+        try:
+            license_end = datetime.strptime(info["license_end"], "%d.%m.%Y")
+            notify_date = license_end - timedelta(days=3)
+            if today == notify_date.date():
+                async def send_reminder():
+                    bot = Bot(BOT_TOKEN)
+                    await bot.send_message(
+                        chat_id=info["chat_id"],
+                        text=f"⏰ Магазин {store} — через 3 дні завершується дія ліцензії ({info['license_end']})!"
+                    )
+                asyncio.run(send_reminder())
+        except Exception as e:
+            print(f"❌ Помилка нагадування по {store}:", e)
 
-# === Telegram App + Flask Webhook ===
+# === Flask + Telegram Webhook ===
 app = Flask(__name__)
 tg_app = Application.builder().token(BOT_TOKEN).build()
 tg_app.add_handler(CommandHandler("start", start))
