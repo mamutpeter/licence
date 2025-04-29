@@ -48,8 +48,6 @@ instruction_text = """
 5. Бот згенерує заяву і нагадає за 3 дні
 """
 
-# ======= Функції =======
-
 def generate_docx(payments):
     doc = Document(TEMPLATE_FILE)
     target_table = None
@@ -108,7 +106,6 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = update.message.text.strip()
-
     if text == "📘 Як користуватись":
         return await update.message.reply_text(instruction_text)
     if text == "📄 Завантажити список магазинів":
@@ -182,7 +179,7 @@ def reminder_check():
     except Exception as e:
         print("❌ Нагадування: помилка:", e)
 
-# ======= Старт серверу =======
+# === Flask + Telegram ===
 
 app = Flask(__name__)
 tg_app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -197,11 +194,15 @@ scheduler.start()
 def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, tg_app.bot)
-    asyncio.run(tg_app.process_update(update))
+
+    async def process():
+        await tg_app.initialize()
+        await tg_app.process_update(update)
+
+    asyncio.run(process())
     return "ok"
 
 if __name__ == "__main__":
     print("🔄 Старт сервера для Webhook...")
-    bot = Bot(BOT_TOKEN)
-    asyncio.run(bot.set_webhook(f"{WEBHOOK_URL}/webhook"))
+    asyncio.run(Bot(BOT_TOKEN).set_webhook(f"{WEBHOOK_URL}/webhook"))
     app.run(host="0.0.0.0", port=PORT)
