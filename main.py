@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import threading
 from datetime import datetime, timedelta
 from flask import Flask, request
 from telegram import Update, Bot, ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -8,7 +9,7 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes, filters
 )
 from docx import Document
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # === Конфігурація ===
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
@@ -23,20 +24,6 @@ user_states = {}
 
 keyboard = ReplyKeyboardMarkup([["➕ Додати оплату", "✅ Завершити"]],
                                resize_keyboard=True, one_time_keyboard=True)
-
-instruction_text = """
-📘 Інструкція користування ботом:
-
-1. Введи /start
-2. Введи по черзі:
-   – Код класифікації доходу
-   – Суму
-   – Номер інструкції
-   – Дату інструкції
-3. Натисни '✅ Завершити'
-4. Введи дату завершення ліцензії
-5. Бот згенерує заяву і нагадає за 3 дні
-"""
 
 def generate_docx(payments):
     doc = Document(TEMPLATE_FILE)
@@ -156,33 +143,35 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
             continue
     await update.message.reply_text(msg)
 
-async def reminder_check():
+def reminder_check():
     data = load_license_date()
     today = datetime.now().date()
-    bot = Bot(BOT_TOKEN)
+
+    def send_async(chat_id, date_str):
+        async def notify():
+            bot = Bot(BOT_TOKEN)
+            await bot.send_message(
+                chat_id=int(chat_id),
+                text=f"⏰ Через 3 дні завершується дія ліцензії ({date_str})! Виконай /start"
+            )
+        asyncio.run(notify())
+
     for chat_id, date_str in data.items():
         try:
             lic_date = datetime.strptime(date_str, "%d.%m.%Y").date()
             if (lic_date - today).days == 3:
-                await bot.send_message(
-                    chat_id=int(chat_id),
-                    text=f"⏰ Через 3 дні завершується дія ліцензії ({date_str})! Виконай /start"
-                )
+                threading.Thread(target=send_async, args=(chat_id, date_str)).start()
         except:
             continue
 
 # === Telegram + Flask ===
 app = Flask(__name__)
 tg_app = Application.builder().token(BOT_TOKEN).build()
-
-# ✅ Ініціалізація Telegram Application
-asyncio.run(tg_app.initialize())
-
 tg_app.add_handler(CommandHandler("start", start))
 tg_app.add_handler(CommandHandler("status", status))
 tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
 
-scheduler = AsyncIOScheduler()
+scheduler = BackgroundScheduler()
 scheduler.add_job(reminder_check, "interval", hours=12)
 scheduler.start()
 
@@ -192,7 +181,7 @@ def process_async_update(update):
 @app.route('/webhook', methods=['POST'])
 def webhook():
     update = Update.de_json(request.get_json(force=True), tg_app.bot)
-    asyncio.create_task(tg_app.process_update(update))
+    threading.Thread(target=process_async_update, args=(update,)).start()
     return "ok"
 
 if __name__ == "__main__":
