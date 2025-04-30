@@ -167,6 +167,7 @@ def reminder_check():
 # === Telegram + Flask ===
 app = Flask(__name__)
 tg_app = Application.builder().token(BOT_TOKEN).build()
+asyncio.run(tg_app.initialize())
 tg_app.add_handler(CommandHandler("start", start))
 tg_app.add_handler(CommandHandler("status", status))
 tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
