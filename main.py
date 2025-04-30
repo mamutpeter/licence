@@ -1,17 +1,21 @@
+
 import os
 import json
 import asyncio
+import threading
 from datetime import datetime, timedelta
 from flask import Flask, request
 from telegram import Update, Bot, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, ContextTypes, filters
+)
 from docx import Document
 from apscheduler.schedulers.background import BackgroundScheduler
 
-BOT_TOKEN = "7685520910:AAH5Yx8uhW0Ry3ozQjsMjNPGlMBUadkfTno"
-WEBHOOK_URL = "https://dochelp-ctqw.onrender.com"
+# === Конфігурація ===
+BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://yourdomain.com")
 PORT = int(os.environ.get("PORT", 10000))
-
 LICENSE_DATE_FILE = "license_date.json"
 TEMPLATE_FILE = "template_zayava.docx"
 OUTPUT_DOCX = "zayava_ready.docx"
@@ -22,19 +26,27 @@ user_states = {}
 keyboard = ReplyKeyboardMarkup([["➕ Додати оплату", "✅ Завершити"]],
                                resize_keyboard=True, one_time_keyboard=True)
 
-def load_license_data():
-    if os.path.exists(LICENSE_DATE_FILE):
-        with open(LICENSE_DATE_FILE, "r") as f:
-            return json.load(f)
-    return {}
+instruction_text = """
+📘 Інструкція користування ботом:
 
-def save_license_data(data):
-    with open(LICENSE_DATE_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+1. Введи /start
+2. Введи по черзі:
+   – Код класифікації доходу
+   – Суму
+   – Номер інструкції
+   – Дату інструкції
+3. Натисни '✅ Завершити'
+4. Введи дату завершення ліцензії
+5. Бот згенерує заяву і нагадає за 3 дні
+"""
 
 def generate_docx(payments):
     doc = Document(TEMPLATE_FILE)
-    target_table = next((t for t in doc.tables if "9.1." in t.cell(0, 0).text), None)
+    target_table = None
+    for table in doc.tables:
+        if "9.1. код класифікації доходів бюджету:" in table.cell(0, 0).text:
+            target_table = table
+            break
     if target_table:
         for row in target_table.rows[1:]:
             row._element.getparent().remove(row._element)
@@ -50,98 +62,122 @@ def generate_docx(payments):
         return path
     return None
 
+def save_license_date(date_str, chat_id):
+    if os.path.exists(LICENSE_DATE_FILE):
+        with open(LICENSE_DATE_FILE, "r") as f:
+            data = json.load(f)
+    else:
+        data = {}
+    data[str(chat_id)] = date_str
+    with open(LICENSE_DATE_FILE, "w") as f:
+        json.dump(data, f)
+
+def load_license_date():
+    if not os.path.exists(LICENSE_DATE_FILE):
+        return {}
+    with open(LICENSE_DATE_FILE, "r") as f:
+        return json.load(f)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if chat_id not in ALLOWED_USER_IDS:
-        return await update.message.reply_text("⛔️ Немає доступу.")
-
+        await update.message.reply_text("⛔️ У вас немає доступу до цього бота.")
+        return
     user_states[chat_id] = {"step": 1, "data": {"payments": []}}
-    await update.message.reply_text("📥 Введіть код класифікації доходів бюджету:", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("📥 Введіть код класифікації доходів бюджету:")
 
 async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    if chat_id not in user_states:
-        return await update.message.reply_text("⚠️ Почніть з /start")
+    if chat_id not in ALLOWED_USER_IDS:
+        await update.message.reply_text("⛔️ У вас немає доступу до цього бота.")
+        return
 
     text = update.message.text.strip()
-    state = user_states[chat_id]
+    state = user_states.get(chat_id)
+
+    if not state:
+        return await update.message.reply_text("⚠️ Почніть з /start.")
+
+    if state["step"] == 6:
+        if text == "➕ Додати оплату":
+            state["step"] = 1
+            return await update.message.reply_text("📥 Введіть код класифікації доходів бюджету:", reply_markup=ReplyKeyboardRemove())
+        elif text == "✅ Завершити":
+            state["step"] = 7
+            return await update.message.reply_text("📅 Введіть дату завершення ліцензії у форматі ДД.ММ.РРРР:")
+        else:
+            return await update.message.reply_text("Оберіть кнопку:", reply_markup=keyboard)
+
+    if state["step"] == 7:
+        try:
+            datetime.strptime(text, "%d.%m.%Y")
+            save_license_date(text, chat_id)
+            path = generate_docx(state["data"]["payments"])
+            if path:
+                await update.message.reply_document(open(path, "rb"), reply_markup=ReplyKeyboardRemove())
+                await update.message.reply_text("✅ Заяву сформовано та збережено дату ліцензії!")
+            else:
+                await update.message.reply_text("❌ Помилка генерації документа.")
+        except ValueError:
+            await update.message.reply_text("❌ Невірний формат дати. Спробуйте ще раз.")
+        user_states.pop(chat_id, None)
+        return
 
     if state["step"] == 1:
         state["current"] = {"code": text}
         state["step"] = 2
-        await update.message.reply_text("📥 Введіть суму:")
-    elif state["step"] == 2:
+        return await update.message.reply_text("📥 Введіть суму:")
+    if state["step"] == 2:
         state["current"]["amount"] = text
         state["step"] = 3
-        await update.message.reply_text("📥 Введіть № інструкції:")
-    elif state["step"] == 3:
+        return await update.message.reply_text("📥 Введіть № інструкції:")
+    if state["step"] == 3:
         state["current"]["instr_number"] = text
         state["step"] = 4
-        await update.message.reply_text("📥 Введіть дату інструкції:")
-    elif state["step"] == 4:
+        return await update.message.reply_text("📥 Введіть дату інструкції:")
+    if state["step"] == 4:
         state["current"]["instr_date"] = text
         state["data"]["payments"].append(state["current"])
-        state["step"] = 5
-        await update.message.reply_text("➕ Додати ще одну оплату чи ✅ Завершити?", reply_markup=keyboard)
-    elif state["step"] == 5:
-        if text == "➕ Додати оплату":
-            state["step"] = 1
-            await update.message.reply_text("📥 Введіть код класифікації доходів бюджету:", reply_markup=ReplyKeyboardRemove())
-        elif text == "✅ Завершити":
-            state["step"] = 6
-            await update.message.reply_text("🏪 Введіть ID магазину:")
-    elif state["step"] == 6:
-        state["store_id"] = text
-        state["step"] = 7
-        await update.message.reply_text("📅 Введіть дату завершення ліцензії (ДД.ММ.РРРР):")
-    elif state["step"] == 7:
-        try:
-            datetime.strptime(text, "%d.%m.%Y")
-            data = load_license_data()
-            data[state["store_id"]] = text
-            save_license_data(data)
-            path = generate_docx(state["data"]["payments"])
-            if path:
-                await update.message.reply_document(open(path, "rb"))
-                await update.message.reply_text("✅ Заяву сформовано!")
-            else:
-                await update.message.reply_text("❌ Помилка при створенні документа.")
-        except:
-            await update.message.reply_text("❌ Неправильна дата. Введіть у форматі ДД.ММ.РРРР.")
-        user_states.pop(chat_id, None)
+        state["step"] = 6
+        return await update.message.reply_text("➕ Додати ще одну оплату чи ✅ Завершити?", reply_markup=keyboard)
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    data = load_license_data()
+    data = load_license_date()
     if not data:
-        return await update.message.reply_text("ℹ️ Дані про ліцензії не знайдено.")
+        await update.message.reply_text("Немає жодної ліцензії.")
+        return
+    today = datetime.now().date()
+    msg = "📅 Статус ліцензій:
 
-    today = datetime.today()
-    msg = "📋 Стан ліцензій:\n"
-    for store_id, date_str in data.items():
+"
+    for chat_id, date_str in data.items():
         try:
-            end_date = datetime.strptime(date_str, "%d.%m.%Y")
-            days = (end_date - today).days
-            msg += f"🏪 Магазин {store_id}: {date_str} ({days} дн.)\n"
+            lic_date = datetime.strptime(date_str, "%d.%m.%Y").date()
+            days_left = (lic_date - today).days
+            msg += f"🧾 Магазин {chat_id}: {date_str} (залишилось {days_left} днів)
+"
         except:
             continue
     await update.message.reply_text(msg)
 
 def reminder_check():
-    data = load_license_data()
-    today = datetime.today().date()
-    for store_id, date_str in data.items():
+    data = load_license_date()
+    today = datetime.now().date()
+    for chat_id, date_str in data.items():
         try:
-            end = datetime.strptime(date_str, "%d.%m.%Y").date()
-            if end - timedelta(days=3) == today:
-                async def send_notification():
+            lic_date = datetime.strptime(date_str, "%d.%m.%Y").date()
+            if (lic_date - today).days == 3:
+                async def notify(chat_id=chat_id, date_str=date_str):
                     bot = Bot(BOT_TOKEN)
-                    for uid in ALLOWED_USER_IDS:
-                        await bot.send_message(uid, f"⏰ Через 3 дні закінчується ліцензія магазину {store_id} ({date_str})!")
-                asyncio.run(send_notification())
+                    await bot.send_message(
+                        chat_id=int(chat_id),
+                        text=f"⏰ Через 3 дні завершується дія ліцензії ({date_str})! Виконай /start"
+                    )
+                threading.Thread(target=asyncio.run, args=(notify(),)).start()
         except:
             continue
 
-# === Flask + Telegram app
+# === Telegram + Flask ===
 app = Flask(__name__)
 tg_app = Application.builder().token(BOT_TOKEN).build()
 tg_app.add_handler(CommandHandler("start", start))
@@ -152,16 +188,17 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(reminder_check, "interval", hours=12)
 scheduler.start()
 
-@app.route("/webhook", methods=["POST"])
+def process_async_update(update):
+    asyncio.run(tg_app.process_update(update))
+
+@app.route('/webhook', methods=['POST'])
 def webhook():
-    data = request.get_json(force=True)
-    update = Update.de_json(data, tg_app.bot)
-    asyncio.get_event_loop().run_until_complete(tg_app.process_update(update))
+    update = Update.de_json(request.get_json(force=True), tg_app.bot)
+    threading.Thread(target=process_async_update, args=(update,)).start()
     return "ok"
 
 if __name__ == "__main__":
     print("🔄 Старт сервера...")
-    asyncio.get_event_loop().run_until_complete(Bot(BOT_TOKEN).set_webhook(f"{WEBHOOK_URL}/webhook"))
-    asyncio.get_event_loop().run_until_complete(tg_app.initialize())
-    asyncio.get_event_loop().create_task(tg_app.start())
+    bot = Bot(BOT_TOKEN)
+    asyncio.run(bot.set_webhook(f"{WEBHOOK_URL}/webhook"))
     app.run(host="0.0.0.0", port=PORT)
