@@ -8,8 +8,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 from docx import Document
 from apscheduler.schedulers.background import BackgroundScheduler
 
-BOT_TOKEN = "YOUR_BOT_TOKEN"
-WEBHOOK_URL = "https://your-app-url.onrender.com"
+BOT_TOKEN = "7685520910:AAH5Yx8uhW0Ry3ozQjsMjNPGlMBUadkfTno"
+WEBHOOK_URL = "https://dochelp-ctqw.onrender.com"
 PORT = int(os.environ.get("PORT", 10000))
 
 LICENSE_DATE_FILE = "license_date.json"
@@ -19,20 +19,8 @@ ALLOWED_USER_IDS = [5826122049, 6887361815]
 
 user_states = {}
 
-keyboard = ReplyKeyboardMarkup([["➕ Додати оплату", "✅ Завершити"]], resize_keyboard=True, one_time_keyboard=True)
-
-instruction_text = """
-📘 Інструкція:
-
-1. Введіть по черзі:
-   – Код класифікації доходу
-   – Суму
-   – Номер інструкції
-   – Дату інструкції
-2. Натисніть ✅ Завершити
-3. Введіть ID магазину
-4. Введіть дату завершення ліцензії
-"""
+keyboard = ReplyKeyboardMarkup([["➕ Додати оплату", "✅ Завершити"]],
+                               resize_keyboard=True, one_time_keyboard=True)
 
 def load_license_data():
     if os.path.exists(LICENSE_DATE_FILE):
@@ -102,8 +90,6 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text == "✅ Завершити":
             state["step"] = 6
             await update.message.reply_text("🏪 Введіть ID магазину:")
-        else:
-            await update.message.reply_text("Оберіть дію:", reply_markup=keyboard)
     elif state["step"] == 6:
         state["store_id"] = text
         state["step"] = 7
@@ -114,7 +100,6 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             data = load_license_data()
             data[state["store_id"]] = text
             save_license_data(data)
-
             path = generate_docx(state["data"]["payments"])
             if path:
                 await update.message.reply_document(open(path, "rb"))
@@ -156,7 +141,7 @@ def reminder_check():
         except:
             continue
 
-# === Flask сервер
+# === Flask + Telegram app
 app = Flask(__name__)
 tg_app = Application.builder().token(BOT_TOKEN).build()
 tg_app.add_handler(CommandHandler("start", start))
@@ -166,11 +151,6 @@ tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input)
 scheduler = BackgroundScheduler()
 scheduler.add_job(reminder_check, "interval", hours=12)
 scheduler.start()
-
-@app.before_first_request
-def init_app():
-    asyncio.get_event_loop().run_until_complete(tg_app.initialize())
-    asyncio.get_event_loop().create_task(tg_app.start())
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -182,4 +162,6 @@ def webhook():
 if __name__ == "__main__":
     print("🔄 Старт сервера...")
     asyncio.get_event_loop().run_until_complete(Bot(BOT_TOKEN).set_webhook(f"{WEBHOOK_URL}/webhook"))
+    asyncio.get_event_loop().run_until_complete(tg_app.initialize())
+    asyncio.get_event_loop().create_task(tg_app.start())
     app.run(host="0.0.0.0", port=PORT)
