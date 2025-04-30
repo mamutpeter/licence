@@ -18,11 +18,11 @@ PORT = int(os.environ.get("PORT", 10000))
 LICENSE_DATE_FILE = "license_date.json"
 TEMPLATE_FILE = "заява.docx"
 OUTPUT_DOCX = "zayava_ready.docx"
-
 ALLOWED_USER_IDS = [5826122049, 6887361815]
 
-# === Змінні стану ===
 user_states = {}
+app = Flask(__name__)
+tg_app = Application.builder().token(BOT_TOKEN).build()
 
 keyboard = ReplyKeyboardMarkup(
     [["➕ Додати оплату", "✅ Завершити"]],
@@ -30,8 +30,7 @@ keyboard = ReplyKeyboardMarkup(
     one_time_keyboard=True
 )
 
-# === Функції ===
-
+# === Генерація документу ===
 def generate_docx(payments):
     doc = Document(TEMPLATE_FILE)
     target_table = None
@@ -54,9 +53,10 @@ def generate_docx(payments):
         return path
     return None
 
-def save_license_dates(license_dates):
+# === Збереження ліцензій ===
+def save_license_dates(data):
     with open(LICENSE_DATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(license_dates, f, ensure_ascii=False, indent=2)
+        json.dump(data, f, ensure_ascii=False)
 
 def load_license_dates():
     if not os.path.exists(LICENSE_DATE_FILE):
@@ -64,24 +64,25 @@ def load_license_dates():
     with open(LICENSE_DATE_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
+# === Обробники команд ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if chat_id not in ALLOWED_USER_IDS:
-        await update.message.reply_text("⛔️ У вас немає доступу до цього бота.")
+        await update.message.reply_text("⛔️ У вас немає доступу.")
         return
 
     user_states[chat_id] = {"step": 1, "data": {"payments": []}}
-    await update.message.reply_text("🧾 Почнемо формувати заяву!\nВведіть код класифікації доходів бюджету:")
+    await update.message.reply_text("🧾 Почнемо. Введіть код класифікації доходів бюджету:")
 
 async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if chat_id not in ALLOWED_USER_IDS:
-        await update.message.reply_text("⛔️ У вас немає доступу до цього бота.")
+        await update.message.reply_text("⛔️ У вас немає доступу.")
         return
 
     text = update.message.text.strip()
     if chat_id not in user_states:
-        return await update.message.reply_text("⚠️ Почніть спочатку через /start.")
+        return await update.message.reply_text("⚠️ Почніть з /start.")
 
     state = user_states[chat_id]
 
@@ -90,7 +91,7 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             state["step"] = 1
             return await update.message.reply_text("📥 Введіть код класифікації доходів бюджету:", reply_markup=ReplyKeyboardRemove())
         elif text == "✅ Завершити":
-            await update.message.reply_text("📅 Введіть дату завершення ліцензії для цієї заяви у форматі ДД.ММ.РРРР:")
+            await update.message.reply_text("📅 Введіть дату завершення ліцензії (ДД.ММ.РРРР):")
             state["step"] = 7
             return
         else:
@@ -99,23 +100,23 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if state["step"] == 7:
         try:
             datetime.strptime(text, "%d.%m.%Y")
-            license_dates = load_license_dates()
-            for payment in state["data"]["payments"]:
-                payment_key = f"{payment['code']}_{payment['amount']}_{payment['instr_number']}"
-                license_dates[payment_key] = {
+            all_dates = load_license_dates()
+            for p in state["data"]["payments"]:
+                key = f"{p['code']}_{p['amount']}_{p['instr_number']}"
+                all_dates[key] = {
                     "date": text,
                     "chat_id": chat_id
                 }
-            save_license_dates(license_dates)
+            save_license_dates(all_dates)
 
             path = generate_docx(state["data"]["payments"])
             if path:
                 await update.message.reply_document(open(path, "rb"), reply_markup=ReplyKeyboardRemove())
-                await update.message.reply_text("✅ Заяву сформовано та збережено нагадування для всіх оплат!")
+                await update.message.reply_text("✅ Готово!")
             else:
-                await update.message.reply_text("❌ Помилка генерації документа.")
-        except ValueError:
-            await update.message.reply_text("❌ Невірний формат дати. Введіть у форматі ДД.ММ.РРРР")
+                await update.message.reply_text("❌ Помилка створення документа.")
+        except:
+            await update.message.reply_text("❌ Невірна дата.")
         user_states.pop(chat_id)
         return
 
@@ -135,31 +136,25 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state["current"]["instr_date"] = text
         state["data"]["payments"].append(state["current"])
         state["step"] = 6
-        return await update.message.reply_text("➕ Додати ще одну оплату чи ✅ Завершити?", reply_markup=keyboard)
+        return await update.message.reply_text("➕ Додати ще чи ✅ Завершити?", reply_markup=keyboard)
 
+# === Нагадування ===
 def reminder_check():
-    license_dates = load_license_dates()
-    if not license_dates:
-        return
+    all_data = load_license_dates()
     today = datetime.now().date()
-    for key, info in license_dates.items():
+    for key, val in all_data.items():
         try:
-            license_end = datetime.strptime(info["date"], "%d.%m.%Y")
-            notify_date = license_end - timedelta(days=3)
-            if today == notify_date.date():
-                async def send_notification():
-                    bot = Bot(BOT_TOKEN)
-                    await bot.send_message(
-                        chat_id=info["chat_id"],
-                        text=f"⏰ Через 3 дні завершується дія ліцензії для оплати {key.split('_')[0]} ({info['date']})! Не забудь оновити!"
+            end = datetime.strptime(val["date"], "%d.%m.%Y")
+            if (end - timedelta(days=3)).date() == today:
+                async def send():
+                    await Bot(BOT_TOKEN).send_message(
+                        val["chat_id"],
+                        f"⏰ Через 3 дні закінчується дія ліцензії ({val['date']}) для оплати {key}"
                     )
-                asyncio.run(send_notification())
-        except Exception as e:
-            print("❌ Нагадування: помилка:", e)
+                asyncio.run(send())
+        except: continue
 
-# === Telegram App + Flask Webhook ===
-app = Flask(__name__)
-tg_app = Application.builder().token(BOT_TOKEN).build()
+# === Telegram + Webhook ===
 tg_app.add_handler(CommandHandler("start", start))
 tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
 
@@ -167,12 +162,7 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(reminder_check, "interval", hours=12)
 scheduler.start()
 
-@app.before_first_request
-def initialize_bot():
-    asyncio.run(tg_app.initialize())
-    asyncio.create_task(tg_app.start())
-
-@app.route('/webhook', methods=['POST'])
+@app.route("/webhook", methods=["POST"])
 async def webhook():
     data = await request.get_json(force=True)
     update = Update.de_json(data, tg_app.bot)
@@ -180,7 +170,9 @@ async def webhook():
     return "ok"
 
 if __name__ == "__main__":
-    print("🔄 Старт сервера для Webhook...")
-    bot = Bot(BOT_TOKEN)
-    asyncio.run(bot.set_webhook(f"{WEBHOOK_URL}/webhook"))
-    app.run(host="0.0.0.0", port=PORT)
+    async def main():
+        await tg_app.initialize()
+        await tg_app.start()
+        await Bot(BOT_TOKEN).set_webhook(f"{WEBHOOK_URL}/webhook")
+        app.run(host="0.0.0.0", port=PORT)
+    asyncio.run(main())
