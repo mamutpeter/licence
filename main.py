@@ -165,7 +165,7 @@ scheduler.start()
 
 @app.route('/webhook', methods=['POST'])
 async def webhook():
-    data = await request.get_json(force=True)
+    data = request.get_json(force=True)  # ← без await
     update = Update.de_json(data, tg_app.bot)
     await tg_app.process_update(update)
     return "ok"
