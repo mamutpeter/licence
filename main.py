@@ -147,9 +147,9 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Немає жодної ліцензії.")
         return
     today = datetime.now().date()
-    msg = "📅 Статус ліцензій:
+    msg = "📅 Статус ліцензій:\n"
 
-"
+
     for chat_id, date_str in data.items():
         try:
             lic_date = datetime.strptime(date_str, "%d.%m.%Y").date()
