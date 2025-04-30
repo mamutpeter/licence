@@ -12,8 +12,8 @@ from docx import Document
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # === Конфігурація ===
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://yourdomain.com")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7685520910:AAH5Yx8uhW0Ry3ozQjsMjNPGlMBUadkfTno")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://dochelp-ctqw.onrender.com")
 PORT = int(os.environ.get("PORT", 10000))
 LICENSE_DATE_FILE = "license_date.json"
 TEMPLATE_FILE = "template_zayava.docx"
