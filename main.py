@@ -1,4 +1,3 @@
-
 import os
 import json
 import asyncio
@@ -149,13 +148,11 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     today = datetime.now().date()
     msg = "📅 Статус ліцензій:\n"
 
-
     for chat_id, date_str in data.items():
         try:
             lic_date = datetime.strptime(date_str, "%d.%m.%Y").date()
             days_left = (lic_date - today).days
-            msg += f"🧾 Магазин {chat_id}: {date_str} (залишилось {days_left} днів)
-"
+            msg += f"🧾 Магазин {chat_id}: {date_str} (залишилось {days_left} днів)\n"
         except:
             continue
     await update.message.reply_text(msg)
