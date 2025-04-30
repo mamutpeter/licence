@@ -1,7 +1,6 @@
 import os
 import json
 import asyncio
-import threading
 from datetime import datetime, timedelta
 from flask import Flask, request
 from telegram import Update, Bot, ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -9,7 +8,7 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes, filters
 )
 from docx import Document
-from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # === Конфігурація ===
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
@@ -157,20 +156,18 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
             continue
     await update.message.reply_text(msg)
 
-def reminder_check():
+async def reminder_check():
     data = load_license_date()
     today = datetime.now().date()
+    bot = Bot(BOT_TOKEN)
     for chat_id, date_str in data.items():
         try:
             lic_date = datetime.strptime(date_str, "%d.%m.%Y").date()
             if (lic_date - today).days == 3:
-                async def notify(chat_id=chat_id, date_str=date_str):
-                    bot = Bot(BOT_TOKEN)
-                    await bot.send_message(
-                        chat_id=int(chat_id),
-                        text=f"⏰ Через 3 дні завершується дія ліцензії ({date_str})! Виконай /start"
-                    )
-                threading.Thread(target=asyncio.run, args=(notify(),)).start()
+                await bot.send_message(
+                    chat_id=int(chat_id),
+                    text=f"⏰ Через 3 дні завершується дія ліцензії ({date_str})! Виконай /start"
+                )
         except:
             continue
 
@@ -178,14 +175,14 @@ def reminder_check():
 app = Flask(__name__)
 tg_app = Application.builder().token(BOT_TOKEN).build()
 
-# ✅ Необхідна ініціалізація для Webhook-сценарію
+# ✅ Ініціалізація Telegram Application
 asyncio.run(tg_app.initialize())
 
 tg_app.add_handler(CommandHandler("start", start))
 tg_app.add_handler(CommandHandler("status", status))
 tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
 
-scheduler = BackgroundScheduler()
+scheduler = AsyncIOScheduler()
 scheduler.add_job(reminder_check, "interval", hours=12)
 scheduler.start()
 
@@ -195,7 +192,7 @@ def process_async_update(update):
 @app.route('/webhook', methods=['POST'])
 def webhook():
     update = Update.de_json(request.get_json(force=True), tg_app.bot)
-    threading.Thread(target=process_async_update, args=(update,)).start()
+    asyncio.create_task(tg_app.process_update(update))
     return "ok"
 
 if __name__ == "__main__":
