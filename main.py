@@ -171,8 +171,7 @@ def reminder_check():
             bot = Bot(BOT_TOKEN)
             await bot.send_message(
                 chat_id=ALLOWED_USER_IDS[0],  # або розширити логіку на всіх
-                text=f"⏰ Через 3 дні завершується дія ліцензії ({date_str})!
-🏪 {address}\nВиконай /start"
+                text=f"⏰ Через 3 дні завершується дія ліцензії ({date_str})!\n\n🏪 {address}\nВиконай /start"
             )
         asyncio.run(notify())
 
