@@ -167,7 +167,9 @@ def reminder_check():
 # === Telegram + Flask ===
 app = Flask(__name__)
 tg_app = Application.builder().token(BOT_TOKEN).build()
-asyncio.run(tg_app.initialize())
+main_loop = asyncio.new_event_loop()
+asyncio.set_event_loop(main_loop)
+main_loop.run_until_complete(tg_app.initialize())
 tg_app.add_handler(CommandHandler("start", start))
 tg_app.add_handler(CommandHandler("status", status))
 tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
@@ -176,11 +178,12 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(reminder_check, "interval", hours=12)
 scheduler.start()
 
-def process_async_update(update):
-    loop = asyncio.new_event_loop()
+def run_loop_forever(loop):
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(tg_app.process_update(update))
-    loop.close()
+    loop.run_forever()
+
+def process_async_update(update):
+    asyncio.run_coroutine_threadsafe(tg_app.process_update(update), main_loop)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -191,5 +194,6 @@ def webhook():
 if __name__ == "__main__":
     print("🔄 Старт сервера...")
     bot = Bot(BOT_TOKEN)
-    asyncio.run(bot.set_webhook(f"{WEBHOOK_URL}/webhook"))
+    main_loop.run_until_complete(bot.set_webhook(f"{WEBHOOK_URL}/webhook"))
+    threading.Thread(target=run_loop_forever, args=(main_loop,), daemon=True).start()
     app.run(host="0.0.0.0", port=PORT)
