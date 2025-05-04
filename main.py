@@ -16,6 +16,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://yourdomain.com")
 PORT = int(os.environ.get("PORT", 10000))
 LICENSE_DATE_FILE = "license_date.json"
+STORE_IDS_FILE = "store_ids.json"
 TEMPLATE_FILE = "template_zayava.docx"
 OUTPUT_DOCX = "zayava_ready.docx"
 ALLOWED_USER_IDS = [5826122049, 6887361815, 581331192]
@@ -47,13 +48,13 @@ def generate_docx(payments):
         return path
     return None
 
-def save_license_date(date_str, chat_id):
+def save_license_date(date_str, store_id):
     if os.path.exists(LICENSE_DATE_FILE):
         with open(LICENSE_DATE_FILE, "r") as f:
             data = json.load(f)
     else:
         data = {}
-    data[str(chat_id)] = date_str
+    data[str(store_id)] = date_str
     with open(LICENSE_DATE_FILE, "w") as f:
         json.dump(data, f)
 
@@ -61,6 +62,12 @@ def load_license_date():
     if not os.path.exists(LICENSE_DATE_FILE):
         return {}
     with open(LICENSE_DATE_FILE, "r") as f:
+        return json.load(f)
+
+def load_store_ids():
+    if not os.path.exists(STORE_IDS_FILE):
+        return {}
+    with open(STORE_IDS_FILE, "r") as f:
         return json.load(f)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -89,14 +96,23 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await update.message.reply_text("📥 Введіть код класифікації доходів бюджету:", reply_markup=ReplyKeyboardRemove())
         elif text == "✅ Завершити":
             state["step"] = 7
-            return await update.message.reply_text("📅 Введіть дату завершення ліцензії у форматі ДД.ММ.РРРР:")
+            return await update.message.reply_text("📅 Введіть ІДЕНТИФІКАТОР магазину:")
         else:
             return await update.message.reply_text("Оберіть кнопку:", reply_markup=keyboard)
 
     if state["step"] == 7:
         try:
+            store_id = int(text)
+            state["store_id"] = store_id
+            state["step"] = 8
+            return await update.message.reply_text("📅 Введіть дату завершення ліцензії у форматі ДД.ММ.РРРР:")
+        except ValueError:
+            return await update.message.reply_text("❌ Невірний формат ІД магазину. Спробуйте ще раз.")
+
+    if state["step"] == 8:
+        try:
             datetime.strptime(text, "%d.%m.%Y")
-            save_license_date(text, chat_id)
+            save_license_date(text, state["store_id"])
             path = generate_docx(state["data"]["payments"])
             if path:
                 await update.message.reply_document(open(path, "rb"), reply_markup=ReplyKeyboardRemove())
@@ -128,39 +144,44 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = load_license_date()
+    stores = load_store_ids()
     if not data:
         await update.message.reply_text("Немає жодної ліцензії.")
         return
     today = datetime.now().date()
     msg = "📅 Статус ліцензій:\n"
 
-    for chat_id, date_str in data.items():
+    for store_id, date_str in data.items():
         try:
             lic_date = datetime.strptime(date_str, "%d.%m.%Y").date()
             days_left = (lic_date - today).days
-            msg += f"🧾 Магазин {chat_id}: {date_str} (залишилось {days_left} днів)\n"
+            address = stores.get(str(store_id), f"ID {store_id}")
+            msg += f"🧾 {address}: {date_str} (залишилось {days_left} днів)\n"
         except:
             continue
     await update.message.reply_text(msg)
 
 def reminder_check():
     data = load_license_date()
+    stores = load_store_ids()
     today = datetime.now().date()
 
-    def send_async(chat_id, date_str):
+    def send_async(store_id, date_str, address):
         async def notify():
             bot = Bot(BOT_TOKEN)
             await bot.send_message(
-                chat_id=int(chat_id),
-                text=f"⏰ Через 3 дні завершується дія ліцензії ({date_str})! Виконай /start"
+                chat_id=ALLOWED_USER_IDS[0],  # або розширити логіку на всіх
+                text=f"⏰ Через 3 дні завершується дія ліцензії ({date_str})!
+🏪 {address}\nВиконай /start"
             )
         asyncio.run(notify())
 
-    for chat_id, date_str in data.items():
+    for store_id, date_str in data.items():
         try:
             lic_date = datetime.strptime(date_str, "%d.%m.%Y").date()
             if (lic_date - today).days == 3:
-                threading.Thread(target=send_async, args=(chat_id, date_str)).start()
+                address = stores.get(str(store_id), f"ID {store_id}")
+                threading.Thread(target=send_async, args=(store_id, date_str, address)).start()
         except:
             continue
 
