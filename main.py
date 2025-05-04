@@ -18,7 +18,7 @@ PORT = int(os.environ.get("PORT", 10000))
 LICENSE_DATE_FILE = "license_date.json"
 TEMPLATE_FILE = "template_zayava.docx"
 OUTPUT_DOCX = "zayava_ready.docx"
-ALLOWED_USER_IDS = [5826122049, 6887361815]
+ALLOWED_USER_IDS = [5826122049, 6887361815, 581331192]
 
 user_states = {}
 
