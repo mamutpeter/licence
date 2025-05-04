@@ -18,7 +18,7 @@ PORT = int(os.environ.get("PORT", 10000))
 LICENSE_DATE_FILE = "license_date.json"
 TEMPLATE_FILE = "template_zayava.docx"
 OUTPUT_DOCX = "zayava_ready.docx"
-ALLOWED_USER_IDS = [5826122049, 6887361815, 581331192]
+ALLOWED_USER_IDS = [5826122049, 6887361815]
 
 user_states = {}
 
@@ -177,7 +177,10 @@ scheduler.add_job(reminder_check, "interval", hours=12)
 scheduler.start()
 
 def process_async_update(update):
-    asyncio.run(tg_app.process_update(update))
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(tg_app.process_update(update))
+    loop.close()
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
