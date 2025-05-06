@@ -28,6 +28,10 @@ keyboard = ReplyKeyboardMarkup([[
     "➕ Додати оплату", "✅ Завершити"
 ]], resize_keyboard=True, one_time_keyboard=True)
 
+main_keyboard = ReplyKeyboardMarkup([
+    ["🏪 Магазини", "🚬 Кіоски"]
+], resize_keyboard=True, one_time_keyboard=True)
+
 def generate_docx(payments):
     doc = Document(TEMPLATE_FILE)
     target_table = None
@@ -77,10 +81,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id not in ALLOWED_USER_IDS:
         await update.message.reply_text("⛔️ У вас немає доступу до цього бота.")
         return
-    reply = ReplyKeyboardMarkup([
-        ["🏪 Магазини (алкоголь + тютюн)", "🚬 Кіоски (тільки тютюн)"]
-    ], resize_keyboard=True, one_time_keyboard=True)
-    await update.message.reply_text("👋 Оберіть з чим хочете працювати:", reply_markup=reply)
+    await update.message.reply_text("👋 Оберіть з чим хочете працювати:", reply_markup=main_keyboard)
 
 async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -120,9 +121,9 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             path = generate_docx(state["data"]["payments"])
             if path:
                 await update.message.reply_document(open(path, "rb"), reply_markup=ReplyKeyboardRemove())
-                await update.message.reply_text("✅ Заяву сформовано та збережено дату ліцензії!")
+                await update.message.reply_text("✅ Заяву сформовано та збережено дату ліцензії!", reply_markup=main_keyboard)
             else:
-                await update.message.reply_text("❌ Помилка генерації документа.")
+                await update.message.reply_text("❌ Помилка генерації документа.", reply_markup=main_keyboard)
         except ValueError:
             await update.message.reply_text("❌ Невірний формат дати. Спробуйте ще раз.")
         user_states.pop(chat_id, None)
