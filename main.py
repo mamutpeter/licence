@@ -78,8 +78,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔️ У вас немає доступу до цього бота.")
         return
     reply = ReplyKeyboardMarkup([
-        ["/shop"],
-        ["/kiosk"]
+        ["🏪 Магазини (алкоголь + тютюн)", "🚬 Кіоски (тільки тютюн)"]
     ], resize_keyboard=True, one_time_keyboard=True)
     await update.message.reply_text("👋 Оберіть з чим хочете працювати:", reply_markup=reply)
 
