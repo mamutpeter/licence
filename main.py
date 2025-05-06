@@ -62,7 +62,7 @@ def save_license_date(date_str, store_id, store_type):
         data = {}
     data[str(store_id)] = {"date": date_str, "type": store_type}
     with open(LICENSE_DATE_FILE, "w") as f:
-        json.dump(data, f)
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 def load_license_date():
     if not os.path.exists(LICENSE_DATE_FILE):
