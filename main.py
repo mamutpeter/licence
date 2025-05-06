@@ -92,6 +92,11 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     state = user_states.get(chat_id)
 
+    if text == "🏪 Магазини":
+        return await shop(update, context)
+    if text == "🚬 Кіоски":
+        return await kiosk(update, context)
+
     if not state:
         return await update.message.reply_text("⚠️ Почніть з /start.")
 
