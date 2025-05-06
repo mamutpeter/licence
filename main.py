@@ -24,7 +24,9 @@ ALLOWED_USER_IDS = [5826122049, 6887361815]
 
 user_states = {}
 
-keyboard = ReplyKeyboardMarkup([["➕ Додати оплату", "✅ Завершити"]], resize_keyboard=True, one_time_keyboard=True)
+keyboard = ReplyKeyboardMarkup([[
+    "➕ Додати оплату", "✅ Завершити"
+]], resize_keyboard=True, one_time_keyboard=True)
 
 def generate_docx(payments):
     doc = Document(TEMPLATE_FILE)
@@ -75,8 +77,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id not in ALLOWED_USER_IDS:
         await update.message.reply_text("⛔️ У вас немає доступу до цього бота.")
         return
-    user_states[chat_id] = {"step": 1, "data": {"payments": []}}
-    await update.message.reply_text("📥 Введіть код класифікації доходів бюджету:")
+    reply = ReplyKeyboardMarkup([
+        ["/shop"],
+        ["/kiosk"]
+    ], resize_keyboard=True, one_time_keyboard=True)
+    await update.message.reply_text("👋 Оберіть з чим хочете працювати:", reply_markup=reply)
 
 async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -169,6 +174,8 @@ async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for sid, addr in shops.items():
         msg += f"{sid}. {addr}\n"
     await update.message.reply_text(msg)
+    user_states[update.effective_chat.id] = {"step": 1, "data": {"payments": []}}
+    await update.message.reply_text("📥 Введіть код класифікації доходів бюджету:")
 
 async def kiosk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kiosks = load_store_group(STORE_KIOSKS_FILE)
@@ -176,6 +183,8 @@ async def kiosk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for sid, addr in kiosks.items():
         msg += f"{sid}. {addr}\n"
     await update.message.reply_text(msg)
+    user_states[update.effective_chat.id] = {"step": 1, "data": {"payments": []}}
+    await update.message.reply_text("📥 Введіть код класифікації доходів бюджету:")
 
 def reminder_check():
     data = load_license_date()
