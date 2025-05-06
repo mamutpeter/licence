@@ -54,13 +54,13 @@ def generate_docx(payments):
         return path
     return None
 
-def save_license_date(date_str, store_id):
+def save_license_date(date_str, store_id, store_type):
     if os.path.exists(LICENSE_DATE_FILE):
         with open(LICENSE_DATE_FILE, "r") as f:
             data = json.load(f)
     else:
         data = {}
-    data[str(store_id)] = date_str
+    data[str(store_id)] = {"date": date_str, "type": store_type}
     with open(LICENSE_DATE_FILE, "w") as f:
         json.dump(data, f)
 
@@ -122,7 +122,7 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if state["step"] == 8:
         try:
             datetime.strptime(text, "%d.%m.%Y")
-            save_license_date(text, state["store_id"])
+            save_license_date(text, state["store_id"], state["type"])
             path = generate_docx(state["data"]["payments"])
             if path:
                 await update.message.reply_document(open(path, "rb"), reply_markup=ReplyKeyboardRemove())
@@ -156,18 +156,17 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = load_license_date()
     shops = load_store_group(STORE_SHOPS_FILE)
     kiosks = load_store_group(STORE_KIOSKS_FILE)
-    combined = {**shops, **kiosks}
-    if not data:
-        await update.message.reply_text("Немає жодної ліцензії.")
-        return
-    today = datetime.now().date()
     msg = "📅 Статус ліцензій:\n"
+    today = datetime.now().date()
 
-    for store_id, date_str in data.items():
+    for store_id, value in data.items():
+        date_str = value["date"]
+        store_type = value.get("type", "shop")
+        store_group = shops if store_type == "shop" else kiosks
+        address = store_group.get(str(store_id), f"ID {store_id}")
         try:
             lic_date = datetime.strptime(date_str, "%d.%m.%Y").date()
             days_left = (lic_date - today).days
-            address = combined.get(str(store_id), f"ID {store_id}")
             msg += f"🧾 {address}: {date_str} (залишилось {days_left} днів)\n"
         except:
             continue
@@ -179,7 +178,7 @@ async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for sid, addr in shops.items():
         msg += f"{sid}. {addr}\n"
     await update.message.reply_text(msg)
-    user_states[update.effective_chat.id] = {"step": 1, "data": {"payments": []}}
+    user_states[update.effective_chat.id] = {"step": 1, "data": {"payments": []}, "type": "shop"}
     await update.message.reply_text("📥 Введіть код класифікації доходів бюджету:")
 
 async def kiosk(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -188,14 +187,13 @@ async def kiosk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for sid, addr in kiosks.items():
         msg += f"{sid}. {addr}\n"
     await update.message.reply_text(msg)
-    user_states[update.effective_chat.id] = {"step": 1, "data": {"payments": []}}
+    user_states[update.effective_chat.id] = {"step": 1, "data": {"payments": []}, "type": "kiosk"}
     await update.message.reply_text("📥 Введіть код класифікації доходів бюджету:")
 
 def reminder_check():
     data = load_license_date()
     shops = load_store_group(STORE_SHOPS_FILE)
     kiosks = load_store_group(STORE_KIOSKS_FILE)
-    combined = {**shops, **kiosks}
     today = datetime.now().date()
 
     def send_async(store_id, date_str, address):
@@ -207,11 +205,14 @@ def reminder_check():
             )
         asyncio.run(notify())
 
-    for store_id, date_str in data.items():
+    for store_id, value in data.items():
         try:
+            date_str = value["date"]
+            store_type = value.get("type", "shop")
             lic_date = datetime.strptime(date_str, "%d.%m.%Y").date()
             if (lic_date - today).days == 3:
-                address = combined.get(str(store_id), f"ID {store_id}")
+                group = shops if store_type == "shop" else kiosks
+                address = group.get(str(store_id), f"ID {store_id}")
                 threading.Thread(target=send_async, args=(store_id, date_str, address)).start()
         except:
             continue
