@@ -16,15 +16,15 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://yourdomain.com")
 PORT = int(os.environ.get("PORT", 10000))
 LICENSE_DATE_FILE = "license_date.json"
-STORE_IDS_FILE = "store_ids.json"
+STORE_KIOSKS_FILE = "store_ids_kiosks.json"
+STORE_SHOPS_FILE = "store_ids_shops.json"
 TEMPLATE_FILE = "template_zayava.docx"
 OUTPUT_DOCX = "zayava_ready.docx"
-ALLOWED_USER_IDS = [5826122049, 6887361815, 581331192]
+ALLOWED_USER_IDS = [5826122049, 6887361815]
 
 user_states = {}
 
-keyboard = ReplyKeyboardMarkup([["➕ Додати оплату", "✅ Завершити"]],
-                               resize_keyboard=True, one_time_keyboard=True)
+keyboard = ReplyKeyboardMarkup([["➕ Додати оплату", "✅ Завершити"]], resize_keyboard=True, one_time_keyboard=True)
 
 def generate_docx(payments):
     doc = Document(TEMPLATE_FILE)
@@ -64,10 +64,10 @@ def load_license_date():
     with open(LICENSE_DATE_FILE, "r") as f:
         return json.load(f)
 
-def load_store_ids():
-    if not os.path.exists(STORE_IDS_FILE):
+def load_store_group(file):
+    if not os.path.exists(file):
         return {}
-    with open(STORE_IDS_FILE, "r") as f:
+    with open(file, "r") as f:
         return json.load(f)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -144,7 +144,9 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = load_license_date()
-    stores = load_store_ids()
+    shops = load_store_group(STORE_SHOPS_FILE)
+    kiosks = load_store_group(STORE_KIOSKS_FILE)
+    combined = {**shops, **kiosks}
     if not data:
         await update.message.reply_text("Немає жодної ліцензії.")
         return
@@ -155,23 +157,39 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             lic_date = datetime.strptime(date_str, "%d.%m.%Y").date()
             days_left = (lic_date - today).days
-            address = stores.get(str(store_id), f"ID {store_id}")
+            address = combined.get(str(store_id), f"ID {store_id}")
             msg += f"🧾 {address}: {date_str} (залишилось {days_left} днів)\n"
         except:
             continue
     await update.message.reply_text(msg)
 
+async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    shops = load_store_group(STORE_SHOPS_FILE)
+    msg = "🏪 Магазини (алкоголь + тютюн):\n"
+    for sid, addr in shops.items():
+        msg += f"{sid}. {addr}\n"
+    await update.message.reply_text(msg)
+
+async def kiosk(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    kiosks = load_store_group(STORE_KIOSKS_FILE)
+    msg = "🚬 Кіоски (тільки тютюн):\n"
+    for sid, addr in kiosks.items():
+        msg += f"{sid}. {addr}\n"
+    await update.message.reply_text(msg)
+
 def reminder_check():
     data = load_license_date()
-    stores = load_store_ids()
+    shops = load_store_group(STORE_SHOPS_FILE)
+    kiosks = load_store_group(STORE_KIOSKS_FILE)
+    combined = {**shops, **kiosks}
     today = datetime.now().date()
 
     def send_async(store_id, date_str, address):
         async def notify():
             bot = Bot(BOT_TOKEN)
             await bot.send_message(
-                chat_id=ALLOWED_USER_IDS[0],  # або розширити логіку на всіх
-                text=f"⏰ Через 3 дні завершується дія ліцензії ({date_str})!\n\n🏪 {address}\nВиконай /start"
+                chat_id=ALLOWED_USER_IDS[0],
+                text=f"⏰ Через 3 дні завершується дія ліцензії ({date_str})!\n🏪 {address}\nВиконай /start"
             )
         asyncio.run(notify())
 
@@ -179,7 +197,7 @@ def reminder_check():
         try:
             lic_date = datetime.strptime(date_str, "%d.%m.%Y").date()
             if (lic_date - today).days == 3:
-                address = stores.get(str(store_id), f"ID {store_id}")
+                address = combined.get(str(store_id), f"ID {store_id}")
                 threading.Thread(target=send_async, args=(store_id, date_str, address)).start()
         except:
             continue
@@ -192,6 +210,8 @@ asyncio.set_event_loop(main_loop)
 main_loop.run_until_complete(tg_app.initialize())
 tg_app.add_handler(CommandHandler("start", start))
 tg_app.add_handler(CommandHandler("status", status))
+tg_app.add_handler(CommandHandler("shop", shop))
+tg_app.add_handler(CommandHandler("kiosk", kiosk))
 tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
 
 scheduler = BackgroundScheduler()
