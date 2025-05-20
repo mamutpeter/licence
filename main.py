@@ -140,6 +140,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📋 Оберіть тип ліцензії для перевірки:", reply_markup=type_keyboard)
     user_states[update.effective_chat.id] = {"step": "status_type"}
 
+
 def reminder_check():
     data = load_license_date()
     shops = load_store_group(STORE_SHOPS_FILE)
