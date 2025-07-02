@@ -4,11 +4,10 @@ import asyncio
 import threading
 from datetime import datetime, timedelta
 from flask import Flask, request
-from telegram import Update, Bot, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, Bot, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, ContextTypes, filters
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 )
-from docx import Document
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # === Конфігурація ===
@@ -18,167 +17,181 @@ PORT = int(os.environ.get("PORT", 10000))
 LICENSE_DATE_FILE = "license_date.json"
 STORE_KIOSKS_FILE = "store_ids_kiosks.json"
 STORE_SHOPS_FILE = "store_ids_shops.json"
-TEMPLATE_FILE = "template_zayava.docx"
-OUTPUT_DOCX = "zayava_ready.docx"
 ALLOWED_USER_IDS = [5826122049, 6887361815]
 
 user_states = {}
 
-keyboard = ReplyKeyboardMarkup([[
-    "➕ Додати оплату", "✅ Завершити"
-]], resize_keyboard=True, one_time_keyboard=True)
-
 main_keyboard = ReplyKeyboardMarkup([
-    ["🏪 Магазини", "🚬 Кіоски"]
-], resize_keyboard=True, one_time_keyboard=True)
-
-type_keyboard = ReplyKeyboardMarkup([
     ["🍷 Алкоголь", "🚬 Тютюн"]
 ], resize_keyboard=True, one_time_keyboard=True)
 
-# === Telegram handlers ===
+group_keyboard = ReplyKeyboardMarkup([
+    ["🏪 Магазини", "🚬 Кіоски"]
+], resize_keyboard=True, one_time_keyboard=True)
+
+# === Допоміжні функції ===
+
+def load_store_group(file):
+    with open(file, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def load_license_date():
+    if os.path.exists(LICENSE_DATE_FILE):
+        with open(LICENSE_DATE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_license_date(data):
+    with open(LICENSE_DATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+# === Telegram Handlers ===
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if chat_id not in ALLOWED_USER_IDS:
         await update.message.reply_text("⛔️ У вас немає доступу до цього бота.")
         return
-    await update.message.reply_text("👋 Оберіть з чим хочете працювати:", reply_markup=main_keyboard)
+    user_states[chat_id] = {"step": "choose_type"}
+    await update.message.reply_text("🍷 Оберіть тип ліцензії:", reply_markup=main_keyboard)
 
-async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    shops = load_store_group(STORE_SHOPS_FILE)
-    msg = "🏪 Магазини (алкоголь + тютюн):\n"
-    for sid, addr in shops.items():
-        msg += f"{sid}. {addr}\n"
-    await update.message.reply_text(msg)
-    user_states[update.effective_chat.id] = {"step": "license_type", "data": {}, "group": "shop"}
-    await update.message.reply_text("🍷 Оберіть тип ліцензії:", reply_markup=type_keyboard)
-
-async def kiosk(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kiosks = load_store_group(STORE_KIOSKS_FILE)
-    msg = "🚬 Кіоски (тільки тютюн):\n"
-    for sid, addr in kiosks.items():
-        msg += f"{sid}. {addr}\n"
-    await update.message.reply_text(msg)
-    user_states[update.effective_chat.id] = {"step": "license_type", "data": {}, "group": "kiosk"}
-    await update.message.reply_text("🍷 Оберіть тип ліцензії:", reply_markup=type_keyboard)
-
-async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    text = update.message.text.strip()
+    state = user_states.get(chat_id)
+
     if chat_id not in ALLOWED_USER_IDS:
         await update.message.reply_text("⛔️ У вас немає доступу до цього бота.")
         return
 
-    text = update.message.text.strip()
-    state = user_states.get(chat_id)
-
-    if text == "🏪 Магазини":
-        return await shop(update, context)
-    if text == "🚬 Кіоски":
-        return await kiosk(update, context)
-
     if not state:
-        return await update.message.reply_text("⚠️ Почніть з /start.")
+        return await start(update, context)
 
-    if state["step"] == "license_type":
+    if state["step"] == "choose_type":
         if text not in ["🍷 Алкоголь", "🚬 Тютюн"]:
-            return await update.message.reply_text("❌ Виберіть одну з кнопок.", reply_markup=type_keyboard)
+            return await update.message.reply_text("❌ Виберіть одну з кнопок.", reply_markup=main_keyboard)
         state["license_type"] = "alcohol" if text == "🍷 Алкоголь" else "tobacco"
-        state["step"] = 1
-        state["data"]["payments"] = []
-        return await update.message.reply_text("📥 Введіть код класифікації доходів бюджету:", reply_markup=ReplyKeyboardRemove())
+        state["step"] = "choose_group"
+        return await update.message.reply_text("🏪 Оберіть тип торгової точки:", reply_markup=group_keyboard)
 
-    if state["step"] == 1:
-        state["current"] = {"code": text}
-        state["step"] = 2
-        return await update.message.reply_text("📥 Введіть суму:")
-    if state["step"] == 2:
-        state["current"]["amount"] = text
-        state["step"] = 3
-        return await update.message.reply_text("📥 Введіть № інструкції:")
-    if state["step"] == 3:
-        state["current"]["instr_number"] = text
-        state["step"] = 4
-        return await update.message.reply_text("📥 Введіть дату інструкції:")
-    if state["step"] == 4:
-        state["current"]["instr_date"] = text
-        state["data"]["payments"].append(state["current"])
-        state["step"] = 6
-        return await update.message.reply_text("➕ Додати ще одну оплату чи ✅ Завершити?", reply_markup=keyboard)
-    if state["step"] == 6:
-        if text == "➕ Додати оплату":
-            state["step"] = 1
-            return await update.message.reply_text("📥 Введіть код класифікації доходів бюджету:", reply_markup=ReplyKeyboardRemove())
-        elif text == "✅ Завершити":
-            state["step"] = 7
-            return await update.message.reply_text("📅 Введіть ІДЕНТИФІКАТОР магазину:")
+    if state["step"] == "choose_group":
+        if text not in ["🏪 Магазини", "🚬 Кіоски"]:
+            return await update.message.reply_text("❌ Виберіть одну з кнопок.", reply_markup=group_keyboard)
+        state["group"] = "shop" if text == "🏪 Магазини" else "kiosk"
+        group_file = STORE_SHOPS_FILE if state["group"] == "shop" else STORE_KIOSKS_FILE
+        stores = load_store_group(group_file)
+        msg = "Список точок:\n"
+        for sid, addr in stores.items():
+            msg += f"{sid}. {addr}\n"
+        state["stores"] = stores
+        state["step"] = "choose_store"
+        await update.message.reply_text(msg)
+        return await update.message.reply_text("🔢 Введіть ідентифікатор торгової точки:")
+
+    if state["step"] == "choose_store":
+        store_id = text.strip()
+        if store_id not in state["stores"]:
+            return await update.message.reply_text("❌ Невірний ідентифікатор. Спробуйте ще раз.")
+        state["store_id"] = store_id
+
+        key = f"{state['group']}_{store_id}_{state['license_type']}"
+        licenses = load_license_date()
+
+        if key in licenses:
+            date_start = licenses[key]["start"]
+            date_end = licenses[key]["end"]
+            days_left = (datetime.strptime(date_end, "%d.%m.%Y") - datetime.now()).days
+
+            msg = (f"📄 Ліцензія:\n"
+                   f"Початок: {date_start}\n"
+                   f"Завершення: {date_end}\n"
+                   f"⏳ Залишилось: {days_left} днів")
+
+            buttons = [[InlineKeyboardButton("🔄 Оновити дати", callback_data="update_dates")]]
+            reply_markup = InlineKeyboardMarkup(buttons)
+
+            await update.message.reply_text(msg, reply_markup=reply_markup)
+            user_states.pop(chat_id, None)
         else:
-            return await update.message.reply_text("Оберіть кнопку:", reply_markup=keyboard)
-    if state["step"] == 7:
-        try:
-            store_id = int(text)
-            state["store_id"] = store_id
-            state["step"] = 8
-            return await update.message.reply_text("📅 Введіть дату завершення ліцензії у форматі ДД.ММ.РРРР:")
-        except ValueError:
-            return await update.message.reply_text("❌ Невірний формат ІД магазину. Спробуйте ще раз.")
-    if state["step"] == 8:
+            state["step"] = "enter_date_start"
+            await update.message.reply_text("📅 Введіть дату початку ліцензії (ДД.ММ.РРРР):")
+
+    elif state["step"] == "enter_date_start":
         try:
             datetime.strptime(text, "%d.%m.%Y")
-            save_license_date(text, state["store_id"], state["group"])
-            path = generate_docx(state["data"]["payments"])
-            if path:
-                await update.message.reply_document(open(path, "rb"), reply_markup=ReplyKeyboardRemove())
-                await update.message.reply_text("✅ Заяву сформовано та збережено дату ліцензії!", reply_markup=main_keyboard)
-            else:
-                await update.message.reply_text("❌ Помилка генерації документа.", reply_markup=main_keyboard)
-        except ValueError:
-            await update.message.reply_text("❌ Невірний формат дати. Спробуйте ще раз.")
-        user_states.pop(chat_id, None)
+            state["date_start"] = text
+            state["step"] = "enter_date_end"
+            await update.message.reply_text("📅 Введіть дату закінчення ліцензії (ДД.ММ.РРРР):")
+        except:
+            await update.message.reply_text("❌ Невірний формат дати. Використовуйте ДД.ММ.РРРР")
 
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📋 Оберіть тип ліцензії для перевірки:", reply_markup=type_keyboard)
-    user_states[update.effective_chat.id] = {"step": "status_type"}
+    elif state["step"] == "enter_date_end":
+        try:
+            datetime.strptime(text, "%d.%m.%Y")
+            key = f"{state['group']}_{state['store_id']}_{state['license_type']}"
+            licenses = load_license_date()
+            licenses[key] = {
+                "start": state["date_start"],
+                "end": text
+            }
+            save_license_date(licenses)
+            await update.message.reply_text("✅ Дати збережено!", reply_markup=ReplyKeyboardRemove())
+            user_states.pop(chat_id, None)
+        except:
+            await update.message.reply_text("❌ Невірний формат дати. Використовуйте ДД.ММ.РРРР")
 
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat.id
+
+    if query.data == "update_dates":
+        user_states[chat_id] = {
+            "step": "enter_date_start",
+            "group": None,
+            "store_id": None,
+            "license_type": None
+        }
+
+        # Витягнемо з повідомлення ID магазину і тип ліцензії (можна покращити)
+        await query.message.reply_text("📅 Введіть нову дату початку ліцензії (ДД.ММ.РРРР):")
+
+# === Нагадування ===
 
 def reminder_check():
-    data = load_license_date()
+    licenses = load_license_date()
     shops = load_store_group(STORE_SHOPS_FILE)
     kiosks = load_store_group(STORE_KIOSKS_FILE)
     today = datetime.now().date()
 
-    def send_async(store_id, date_str, address):
+    def send_async(msg):
         async def notify():
             bot = Bot(BOT_TOKEN)
-            await bot.send_message(
-                chat_id=ALLOWED_USER_IDS[0],
-                text=f"⏰ Через 3 дні завершується дія ліцензії ({date_str})!\n🏪 {address}\nВиконай /start"
-            )
+            for uid in ALLOWED_USER_IDS:
+                await bot.send_message(chat_id=uid, text=msg)
         asyncio.run(notify())
 
-    for store_id, value in data.items():
-        try:
-            date_str = value["date"]
-            store_type = value.get("type", "shop")
-            lic_date = datetime.strptime(date_str, "%d.%m.%Y").date()
-            if (lic_date - today).days == 3:
-                group = shops if store_type == "shop" else kiosks
-                address = group.get(str(store_id), f"ID {store_id}")
-                threading.Thread(target=send_async, args=(store_id, date_str, address)).start()
-        except:
-            continue
+    for key, data in licenses.items():
+        group, store_id, license_type = key.split("_")
+        lic_date = datetime.strptime(data["end"], "%d.%m.%Y").date()
+        days_left = (lic_date - today).days
+        if days_left == 3:
+            store_name = (shops if group == "shop" else kiosks).get(store_id, f"ID {store_id}")
+            msg = (f"⏰ Через 3 дні завершується ліцензія на {'алкоголь' if license_type == 'alcohol' else 'тютюн'}!\n"
+                   f"🏪 {store_name}\n"
+                   f"Дата завершення: {data['end']}")
+            threading.Thread(target=send_async, args=(msg,)).start()
 
-# === Telegram + Flask ===
+# === Flask + Telegram ===
+
 app = Flask(__name__)
 tg_app = Application.builder().token(BOT_TOKEN).build()
 main_loop = asyncio.new_event_loop()
 asyncio.set_event_loop(main_loop)
 main_loop.run_until_complete(tg_app.initialize())
 tg_app.add_handler(CommandHandler("start", start))
-tg_app.add_handler(CommandHandler("status", status))
-tg_app.add_handler(CommandHandler("shop", shop))
-tg_app.add_handler(CommandHandler("kiosk", kiosk))
-tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
+tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+tg_app.add_handler(CallbackQueryHandler(handle_callback))
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(reminder_check, "interval", hours=12)
