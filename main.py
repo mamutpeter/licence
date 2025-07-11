@@ -4,7 +4,7 @@ import psycopg2
 from datetime import datetime
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+    Updater, CommandHandler, MessageHandler, CallbackQueryHandler, Filters, CallbackContext
 )
 
 # === Конфігурація ===
@@ -52,7 +52,7 @@ def save_license(key, start, end):
             """, (key, start, end, start, end))
             conn.commit()
 
-def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def start(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     if chat_id not in ALLOWED_USER_IDS:
         update.message.reply_text("⛔️ У вас немає доступу до цього бота.")
@@ -60,7 +60,7 @@ def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_states[chat_id] = {"step": "choose_type"}
     update.message.reply_text("🍷 Оберіть тип ліцензії:", reply_markup=main_keyboard)
 
-def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_message(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     text = update.message.text.strip()
     state = user_states.get(chat_id)
@@ -140,7 +140,7 @@ def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update.message.reply_text("❌ Невірний формат дати. Використовуйте ДД.ММ.РРРР")
         return
 
-def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_callback(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     chat_id = query.message.chat.id
@@ -148,13 +148,15 @@ def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query.message.reply_text("📅 Введіть нову дату початку ліцензії (ДД.ММ.РРРР):")
 
 def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(CallbackQueryHandler(handle_callback))
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+    dp.add_handler(CallbackQueryHandler(handle_callback))
 
     print("✅ Бот запущено")
-    app.run_polling()
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == "__main__":
     main()
