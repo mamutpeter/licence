@@ -10,14 +10,14 @@ async def create_table():
 
     conn = await asyncpg.connect(dsn=db_url)
     await conn.execute("""
-        CREATE TABLE IF NOT EXISTS license_table (
+        CREATE TABLE IF NOT EXISTS licenses (
             key TEXT PRIMARY KEY,
-            start_date TEXT,
-            end_date TEXT
+            start_date DATE,
+            end_date DATE
         )
     """)
     await conn.close()
-    print("✅ Таблиця створена або вже існує.")
+    print("✅ Таблиця licenses створена або вже існує.")
 
 if __name__ == "__main__":
     asyncio.run(create_table())
