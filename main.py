@@ -163,14 +163,20 @@ async def main():
     print("✅ Бот запущено")
     await app.run_polling()  # ПРАВИЛЬНО в async функції
 
+# === Кінець main.py ===
 if __name__ == "__main__":
     try:
-        asyncio.run(main())  # Стандартний запуск
-    except RuntimeError as e:
-        if "already running" in str(e):
-            # Альтернативний запуск, якщо event loop уже активний (наприклад, у Render)
-            loop = asyncio.get_event_loop()
-            loop.create_task(main())
-            loop.run_forever()
-        else:
-            raise
+        # спробувати взяти вже запущений loop (Render тощо)
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # якщо ще не створений – створюємо новий локальний
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    # запускаємо вашу async-функцію main() у наявному loop
+    loop.create_task(main())
+
+    # якщо loop тільки-но створили – треба його «крутити»
+    # (на Render у більшості випадків виконуватиметься саме це)
+    if not loop.is_running():
+        loop.run_forever()
