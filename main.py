@@ -164,4 +164,13 @@ async def main():
     await app.run_polling()  # ПРАВИЛЬНО в async функції
 
 if __name__ == "__main__":
-    asyncio.run(main())  # asyncio.run — гарантує loop створений правильно
+    try:
+        asyncio.run(main())  # Стандартний запуск
+    except RuntimeError as e:
+        if "already running" in str(e):
+            # Альтернативний запуск, якщо event loop уже активний (наприклад, у Render)
+            loop = asyncio.get_event_loop()
+            loop.create_task(main())
+            loop.run_forever()
+        else:
+            raise
