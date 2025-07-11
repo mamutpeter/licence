@@ -1,0 +1,22 @@
+import asyncio
+import asyncpg
+import os
+
+async def create_table():
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        print("DATABASE_URL не знайдено.")
+        return
+
+    conn = await asyncpg.connect(dsn=db_url)
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS license_table (
+            key TEXT PRIMARY KEY,
+            start_date TEXT,
+            end_date TEXT
+        )
+    """)
+    await conn.close()
+    print("✅ Таблиця створена або вже існує.")
+
+asyncio.run(create_table())
