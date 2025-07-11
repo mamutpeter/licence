@@ -166,4 +166,4 @@ async def main():
 # === Кінець main.py ===
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(main())
+    asyncio.get_event_loop().run_until_complete(main())
