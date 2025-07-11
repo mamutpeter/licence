@@ -1,6 +1,5 @@
 import os
-import asyncio
-from datetime import datetime, timedelta, date
+from datetime import datetime, date
 
 from telegram import (
     Update, Bot, ReplyKeyboardMarkup, ReplyKeyboardRemove,
@@ -155,10 +154,11 @@ async def reminder_check():
         for uid in ALLOWED_USER_IDS:
             await bot.send_message(uid, msg)
 
-# === Запуск бота ===
+# === Запуск без asyncio.run ===
 
-async def main():
-    await ensure_tables()
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(ensure_tables())  # створити таблицю
 
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -170,7 +170,4 @@ async def main():
     scheduler.start()
 
     print("✅ Бот запущено")
-    await app.run_polling()
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    app.run_polling()
