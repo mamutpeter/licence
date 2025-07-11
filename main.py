@@ -1,4 +1,6 @@
 import os
+import json
+import asyncio
 from datetime import datetime, date
 
 from telegram import (
@@ -20,14 +22,13 @@ from utils_db import (
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ALLOWED_USER_IDS = [5826122049, 6887361815]
 
-user_states = {}
-
-# === Завантаження магазинів і кіосків ===
-import json
+# === Дані магазинів і кіосків ===
 with open("store_ids_shops.json", "r", encoding="utf-8") as f:
     STORE_SHOPS = json.load(f)
 with open("store_ids_kiosks.json", "r", encoding="utf-8") as f:
     STORE_KIOSKS = json.load(f)
+
+user_states = {}
 
 main_keyboard = ReplyKeyboardMarkup([
     ["🍷 Алкоголь", "🚬 Тютюн"]
@@ -37,7 +38,7 @@ group_keyboard = ReplyKeyboardMarkup([
     ["🏪 Магазини", "🚬 Кіоски"]
 ], resize_keyboard=True, one_time_keyboard=True)
 
-# === Telegram Handlers ===
+# === Обробники Telegram ===
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -154,20 +155,22 @@ async def reminder_check():
         for uid in ALLOWED_USER_IDS:
             await bot.send_message(uid, msg)
 
-# === Запуск без asyncio.run ===
+# === Старт системи ===
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(ensure_tables())  # створити таблицю
+    async def run():
+        await ensure_tables()
 
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(CallbackQueryHandler(handle_callback))
+        app = Application.builder().token(BOT_TOKEN).build()
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        app.add_handler(CallbackQueryHandler(handle_callback))
 
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(reminder_check, "interval", hours=12)
-    scheduler.start()
+        scheduler = AsyncIOScheduler()
+        scheduler.add_job(reminder_check, "interval", hours=12)
+        scheduler.start()
 
-    print("✅ Бот запущено")
-    app.run_polling()
+        print("✅ Бот запущено")
+        await app.run_polling()
+
+    asyncio.run(run())
