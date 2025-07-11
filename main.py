@@ -147,20 +147,27 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # === Старт бота ===
 
-async def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+async def prepare(application: Application) -> None:
+    """Асинхронна ініціалізація: пул БД, таблиці, розклад."""
     pool = await get_pool()
-    app.bot_data["pool"] = pool
+    application.bot_data["pool"] = pool
+
+    scheduler = AsyncIOScheduler()
+    scheduler.start()
+
+
+def main() -> None:
+    app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(handle_callback))
 
-    scheduler = AsyncIOScheduler()
-    scheduler.start()
+    asyncio.run(prepare(app))  # асинхронна підготовка (БД і т.п.)
 
     print("✅ Бот запущено")
-    await app.run_polling()
+    app.run_polling()
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
