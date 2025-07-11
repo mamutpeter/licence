@@ -166,16 +166,4 @@ async def main():
 # === Кінець main.py ===
 if __name__ == "__main__":
     import asyncio
-
-    try:
-        loop = asyncio.get_running_loop()
-        # Якщо вже є loop (Render) — створюємо task
-        loop.create_task(main())
-        import time
-        while True:
-            time.sleep(3600)
-    except RuntimeError:
-        # Якщо loop немає — створюємо й запускаємо як зазвичай
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(main())
+    asyncio.run(main())
