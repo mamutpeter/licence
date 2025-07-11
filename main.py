@@ -129,4 +129,14 @@ def handle_message(update: Update, context: CallbackContext):
             update.message.reply_text("❌ Невірний формат дати. Використовуйте ДД.ММ.РРРР")
         return
 
-    if sta
+       if state["step"] == "enter_date_end":
+        try:
+            date_end = datetime.strptime(text, "%d.%m.%Y").date()
+            key = f"{state['group']}_{state['store_id']}_{state['license_type']}"
+            save_license(key, state["date_start"], date_end)
+            update.message.reply_text("✅ Дати збережено!", reply_markup=ReplyKeyboardRemove())
+            user_states.pop(chat_id, None)
+        except:
+            update.message.reply_text("❌ Невірний формат дати. Використовуйте ДД.ММ.РРРР")
+        return
+
