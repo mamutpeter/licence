@@ -19,4 +19,5 @@ async def create_table():
     await conn.close()
     print("✅ Таблиця створена або вже існує.")
 
-asyncio.run(create_table())
+if __name__ == "__main__":
+    asyncio.run(create_table())
