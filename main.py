@@ -1,15 +1,13 @@
 import os
 import json
-import asyncio
 import init_db  # створить таблицю при запуску
-from datetime import datetime, timedelta
+from datetime import datetime
 import asyncpg
-from telegram import Update, Bot, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
 
 # === Конфігурація ===
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
@@ -41,7 +39,12 @@ async def load_store_group(file):
 async def get_license(pool, key):
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT start_date, end_date FROM licenses WHERE key=$1", key)
-        return dict(row) if row else None
+        if not row:
+            return None
+        return {
+            "start_date": datetime.strptime(row["start_date"], "%Y-%m-%d"),
+            "end_date": datetime.strptime(row["end_date"], "%Y-%m-%d"),
+        }
 
 async def save_license(pool, key, start, end):
     async with pool.acquire() as conn:
@@ -49,7 +52,7 @@ async def save_license(pool, key, start, end):
             INSERT INTO licenses(key, start_date, end_date)
             VALUES ($1, $2, $3)
             ON CONFLICT (key) DO UPDATE SET start_date=$2, end_date=$3
-        """, key, start, end)
+        """, key, start.isoformat(), end.isoformat())
 
 # === Telegram Handlers ===
 
@@ -103,7 +106,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if license_data:
             date_start = license_data['start_date']
             date_end = license_data['end_date']
-            days_left = (date_end - datetime.now().date()).days
+            days_left = (date_end.date() - datetime.now().date()).days
             msg = (f"📄 Ліцензія:\n"
                    f"Початок: {date_start.strftime('%d.%m.%Y')}\n"
                    f"Завершення: {date_end.strftime('%d.%m.%Y')}\n"
@@ -122,7 +125,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             state["date_start"] = text
             state["step"] = "enter_date_end"
             await update.message.reply_text("📅 Введіть дату закінчення ліцензії (ДД.ММ.РРРР):")
-        except:
+        except Exception:
             await update.message.reply_text("❌ Невірний формат дати. Використовуйте ДД.ММ.РРРР")
 
     elif state["step"] == "enter_date_end":
@@ -133,7 +136,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await save_license(pool, key, start, end)
             await update.message.reply_text("✅ Дати збережено!", reply_markup=ReplyKeyboardRemove())
             user_states.pop(chat_id, None)
-        except:
+        except Exception:
             await update.message.reply_text("❌ Невірний формат дати. Використовуйте ДД.ММ.РРРР")
 
 # === Callback Handler ===
@@ -161,9 +164,8 @@ async def main():
     scheduler.start()
 
     print("✅ Бот запущено")
-    await app.run_polling()  # ПРАВИЛЬНО в async функції
+    await app.run_polling()
 
-# === Кінець main.py ===
 if __name__ == "__main__":
     import asyncio
     asyncio.run(main())
