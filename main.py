@@ -35,7 +35,7 @@ def load_store_group(file):
 def get_license(key):
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT start_date, end_date FROM licenses WHERE key=%s", (key,))
+            cur.execute("SELECT start_date, end_date FROM licenses WHERE license_key=%s", (key,))
             row = cur.fetchone()
             if row:
                 return {'start_date': datetime.strptime(row[0], "%Y-%m-%d").date(),
@@ -46,9 +46,9 @@ def save_license(key, start, end):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO licenses(key, start_date, end_date)
+                INSERT INTO licenses(license_key, start_date, end_date)
                 VALUES (%s, %s, %s)
-                ON CONFLICT (key) DO UPDATE SET start_date=%s, end_date=%s
+                ON CONFLICT (license_key) DO UPDATE SET start_date=%s, end_date=%s
             """, (key, start, end, start, end))
             conn.commit()
 
@@ -129,34 +129,4 @@ def handle_message(update: Update, context: CallbackContext):
             update.message.reply_text("❌ Невірний формат дати. Використовуйте ДД.ММ.РРРР")
         return
 
-    if state["step"] == "enter_date_end":
-        try:
-            date_end = datetime.strptime(text, "%d.%m.%Y").date()
-            key = f"{state['group']}_{state['store_id']}_{state['license_type']}"
-            save_license(key, state["date_start"], date_end)
-            update.message.reply_text("✅ Дати збережено!", reply_markup=ReplyKeyboardRemove())
-            user_states.pop(chat_id, None)
-        except:
-            update.message.reply_text("❌ Невірний формат дати. Використовуйте ДД.ММ.РРРР")
-        return
-
-def handle_callback(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.answer()
-    chat_id = query.message.chat.id
-    user_states[chat_id] = {"step": "enter_date_start"}
-    query.message.reply_text("📅 Введіть нову дату початку ліцензії (ДД.ММ.РРРР):")
-
-def main():
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
-    dp.add_handler(CallbackQueryHandler(handle_callback))
-
-    print("✅ Бот запущено")
-    updater.start_polling()
-    updater.idle()
-
-if __name__ == "__main__":
-    main()
+    if sta
