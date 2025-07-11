@@ -166,20 +166,4 @@ async def main():
 # === Кінець main.py ===
 if __name__ == "__main__":
     import asyncio
-
-    async def runner():
-        try:
-            await main()
-        except Exception as e:
-            print(f"❌ Runner error: {e}")
-
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    try:
-        loop.create_task(runner())
-    except Exception as e:
-        print(f"❌ Loop create_task error: {e}")
+    asyncio.run(main())
