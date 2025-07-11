@@ -12,12 +12,12 @@ async def create_table():
     await conn.execute("""
         CREATE TABLE IF NOT EXISTS licenses (
             key TEXT PRIMARY KEY,
-            start_date DATE,
-            end_date DATE
+            start_date TEXT,
+            end_date TEXT
         )
     """)
     await conn.close()
-    print("✅ Таблиця licenses створена або вже існує.")
+    print("✅ Таблиця 'licenses' створена або вже існує.")
 
 if __name__ == "__main__":
     asyncio.run(create_table())
