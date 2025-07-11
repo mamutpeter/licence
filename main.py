@@ -147,27 +147,21 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # === Старт бота ===
 
-async def prepare(application: Application) -> None:
-    """Асинхронна ініціалізація: пул БД, таблиці, розклад."""
-    pool = await get_pool()
-    application.bot_data["pool"] = pool
-
-    scheduler = AsyncIOScheduler()
-    scheduler.start()
-
-
-def main() -> None:
+async def main():
     app = Application.builder().token(BOT_TOKEN).build()
+
+    pool = await get_pool()
+    app.bot_data["pool"] = pool
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(handle_callback))
 
-    asyncio.run(prepare(app))  # асинхронна підготовка (БД і т.п.)
+    scheduler = AsyncIOScheduler()
+    scheduler.start()
 
     print("✅ Бот запущено")
-    app.run_polling()
-
+    await app.run_polling()  # ПРАВИЛЬНО в async функції
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())  # asyncio.run — гарантує loop створений правильно
