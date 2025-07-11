@@ -165,18 +165,21 @@ async def main():
 
 # === Кінець main.py ===
 if __name__ == "__main__":
+    import asyncio
+
+    async def runner():
+        try:
+            await main()
+        except Exception as e:
+            print(f"❌ Runner error: {e}")
+
     try:
-        # спробувати взяти вже запущений loop (Render тощо)
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        # якщо ще не створений – створюємо новий локальний
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    # запускаємо вашу async-функцію main() у наявному loop
-    loop.create_task(main())
-
-    # якщо loop тільки-но створили – треба його «крутити»
-    # (на Render у більшості випадків виконуватиметься саме це)
-    if not loop.is_running():
-        loop.run_forever()
+    try:
+        loop.create_task(runner())
+    except Exception as e:
+        print(f"❌ Loop create_task error: {e}")
