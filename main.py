@@ -129,7 +129,7 @@ def handle_message(update: Update, context: CallbackContext):
             update.message.reply_text("❌ Невірний формат дати. Використовуйте ДД.ММ.РРРР")
         return
 
-       if state["step"] == "enter_date_end":
+    if state["step"] == "enter_date_end":
         try:
             date_end = datetime.strptime(text, "%d.%m.%Y").date()
             key = f"{state['group']}_{state['store_id']}_{state['license_type']}"
@@ -140,3 +140,23 @@ def handle_message(update: Update, context: CallbackContext):
             update.message.reply_text("❌ Невірний формат дати. Використовуйте ДД.ММ.РРРР")
         return
 
+def handle_callback(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    chat_id = query.message.chat.id
+    user_states[chat_id] = {"step": "enter_date_start"}
+    query.message.reply_text("📅 Введіть нову дату початку ліцензії (ДД.ММ.РРРР):")
+
+def main():
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+    dp.add_handler(CallbackQueryHandler(handle_callback))
+
+    print("✅ Бот запущено")
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == "__main__":
+    main()
