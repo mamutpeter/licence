@@ -38,7 +38,6 @@ def get_license(key):
             cur.execute("SELECT start_date, end_date FROM licenses WHERE key=%s", (key,))
             row = cur.fetchone()
             if row:
-                # Зберігаємо як обʼєкти date
                 return {'start_date': datetime.strptime(row[0], "%Y-%m-%d").date(),
                         'end_date': datetime.strptime(row[1], "%Y-%m-%d").date()}
     return None
@@ -68,18 +67,22 @@ def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id not in ALLOWED_USER_IDS:
         return
     if not state:
-        return start(update, context)
+        start(update, context)
+        return
 
     if state["step"] == "choose_type":
         if text not in ["🍷 Алкоголь", "🚬 Тютюн"]:
-            return update.message.reply_text("❌ Виберіть одну з кнопок.", reply_markup=main_keyboard)
+            update.message.reply_text("❌ Виберіть одну з кнопок.", reply_markup=main_keyboard)
+            return
         state["license_type"] = "alcohol" if text == "🍷 Алкоголь" else "tobacco"
         state["step"] = "choose_group"
-        return update.message.reply_text("🏪 Оберіть тип торгової точки:", reply_markup=group_keyboard)
+        update.message.reply_text("🏪 Оберіть тип торгової точки:", reply_markup=group_keyboard)
+        return
 
     if state["step"] == "choose_group":
         if text not in ["🏪 Магазини", "🚬 Кіоски"]:
-            return update.message.reply_text("❌ Виберіть одну з кнопок.", reply_markup=group_keyboard)
+            update.message.reply_text("❌ Виберіть одну з кнопок.", reply_markup=group_keyboard)
+            return
         state["group"] = "shop" if text == "🏪 Магазини" else "kiosk"
         group_file = STORE_SHOPS_FILE if state["group"] == "shop" else STORE_KIOSKS_FILE
         stores = load_store_group(group_file)
@@ -87,17 +90,17 @@ def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state["step"] = "choose_store"
         msg = "Список точок:\n" + "\n".join([f"{k}. {v}" for k, v in stores.items()])
         update.message.reply_text(msg)
-        return update.message.reply_text("🔢 Введіть ідентифікатор торгової точки:")
+        update.message.reply_text("🔢 Введіть ідентифікатор торгової точки:")
+        return
 
     if state["step"] == "choose_store":
         store_id = text.strip()
         if store_id not in state["stores"]:
-            return update.message.reply_text("❌ Невірний ідентифікатор. Спробуйте ще раз.")
+            update.message.reply_text("❌ Невірний ідентифікатор. Спробуйте ще раз.")
+            return
         state["store_id"] = store_id
-
         key = f"{state['group']}_{store_id}_{state['license_type']}"
         license_data = get_license(key)
-
         if license_data:
             date_start = license_data['start_date']
             date_end = license_data['end_date']
@@ -110,11 +113,13 @@ def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup = InlineKeyboardMarkup(buttons)
             update.message.reply_text(msg, reply_markup=reply_markup)
             user_states.pop(chat_id, None)
+            return
         else:
             state["step"] = "enter_date_start"
             update.message.reply_text("📅 Введіть дату початку ліцензії (ДД.ММ.РРРР):")
+            return
 
-    elif state["step"] == "enter_date_start":
+    if state["step"] == "enter_date_start":
         try:
             date_start = datetime.strptime(text, "%d.%m.%Y").date()
             state["date_start"] = date_start
@@ -122,8 +127,9 @@ def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update.message.reply_text("📅 Введіть дату закінчення ліцензії (ДД.ММ.РРРР):")
         except:
             update.message.reply_text("❌ Невірний формат дати. Використовуйте ДД.ММ.РРРР")
+        return
 
-    elif state["step"] == "enter_date_end":
+    if state["step"] == "enter_date_end":
         try:
             date_end = datetime.strptime(text, "%d.%m.%Y").date()
             key = f"{state['group']}_{state['store_id']}_{state['license_type']}"
@@ -132,6 +138,7 @@ def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_states.pop(chat_id, None)
         except:
             update.message.reply_text("❌ Невірний формат дати. Використовуйте ДД.ММ.РРРР")
+        return
 
 def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
