@@ -12,7 +12,7 @@ import pytz
 # === Конфігурація ===
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 DB_URL = os.getenv("DATABASE_URL")
-ALLOWED_USER_IDS = [5826122049, 6887361815]
+ALLOWED_USER_IDS = [5826122049, 6887361815, 581331192]
 
 STORE_KIOSKS_FILE = "store_ids_kiosks.json"
 STORE_SHOPS_FILE = "store_ids_shops.json"
