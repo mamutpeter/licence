@@ -7,7 +7,7 @@ from telegram.ext import (
     Updater, CommandHandler, MessageHandler, CallbackQueryHandler, Filters, CallbackContext
 )
 from apscheduler.schedulers.background import BackgroundScheduler
-import pytz  # <-- ДОДАЙ ЦЕЙ ІМПОРТ
+import pytz
 
 # === Конфігурація ===
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
@@ -62,6 +62,10 @@ def start(update: Update, context: CallbackContext):
     user_states[chat_id] = {"step": "choose_type"}
     update.message.reply_text("🍷 Оберіть тип ліцензії:", reply_markup=main_keyboard)
 
+def menu(update: Update, context: CallbackContext):
+    # Дублює команду /start, але окремо для /menu
+    start(update, context)
+
 def handle_message(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     text = update.message.text.strip()
@@ -86,6 +90,14 @@ def handle_message(update: Update, context: CallbackContext):
             update.message.reply_text("❌ Виберіть одну з кнопок.", reply_markup=group_keyboard)
             return
         state["group"] = "shop" if text == "🏪 Магазини" else "kiosk"
+        # Не дозволяємо алкоголь для кіосків!
+        if state["license_type"] == "alcohol" and state["group"] == "kiosk":
+            update.message.reply_text(
+                "🚫 Кіоски не мають алкогольної ліцензії. Спробуйте інший варіант.",
+                reply_markup=main_keyboard
+            )
+            state["step"] = "choose_type"
+            return
         group_file = STORE_SHOPS_FILE if state["group"] == "shop" else STORE_KIOSKS_FILE
         stores = load_store_group(group_file)
         state["stores"] = stores
@@ -149,6 +161,36 @@ def handle_callback(update: Update, context: CallbackContext):
     user_states[chat_id] = {"step": "enter_date_start"}
     query.message.reply_text("📅 Введіть нову дату початку ліцензії (ДД.ММ.РРРР):")
 
+def risk(update: Update, context: CallbackContext):
+    now = datetime.now().date()
+    expired = []
+    soon = []
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT license_key, start_date, end_date FROM licenses")
+            for license_key, start_date, end_date in cur.fetchall():
+                try:
+                    end = datetime.strptime(end_date, "%Y-%m-%d").date()
+                except:
+                    continue
+                days_left = (end - now).days
+                if days_left < 0:
+                    expired.append((license_key, abs(days_left), end))
+                elif 0 <= days_left < 31:
+                    soon.append((license_key, days_left, end))
+    msg = ""
+    if expired:
+        msg += "❌ ПРОСТРОЧЕНІ ЛІЦЕНЗІЇ:\n"
+        for lic, diff, end in expired:
+            msg += f"{lic}: прострочено на {diff} днів (до {end.strftime('%d.%m.%Y')})\n"
+    if soon:
+        msg += "\n⚠️ Ліцензії, що закінчуються менше ніж за місяць:\n"
+        for lic, left, end in soon:
+            msg += f"{lic}: залишилось {left} днів (до {end.strftime('%d.%m.%Y')})\n"
+    if not msg:
+        msg = "✅ Немає прострочених чи ризикових ліцензій!"
+    update.message.reply_text(msg)
+
 # ========== JOB ДЛЯ НАГАДУВАННЯ ==========
 def check_licenses_job():
     now = datetime.now().date()
@@ -178,12 +220,14 @@ def main():
     global updater  # updater має бути глобальним для job
     updater = Updater(BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
+
     dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("menu", menu))
+    dp.add_handler(CommandHandler("risk", risk))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
     dp.add_handler(CallbackQueryHandler(handle_callback))
 
-    # Запускаємо JOB на фоні
-    scheduler = BackgroundScheduler(timezone=pytz.timezone('Europe/Kiev'))  # <--- Виправлено!
+    scheduler = BackgroundScheduler(timezone=pytz.timezone('Europe/Kiev'))
     scheduler.add_job(check_licenses_job, "interval", hours=1)
     scheduler.start()
 
