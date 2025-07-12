@@ -63,7 +63,6 @@ def start(update: Update, context: CallbackContext):
     update.message.reply_text("🍷 Оберіть тип ліцензії:", reply_markup=main_keyboard)
 
 def menu(update: Update, context: CallbackContext):
-    # Дублює команду /start, але окремо для /menu
     start(update, context)
 
 def handle_message(update: Update, context: CallbackContext):
@@ -74,6 +73,29 @@ def handle_message(update: Update, context: CallbackContext):
         return
     if not state:
         start(update, context)
+        return
+
+    # ОНОВЛЕННЯ ДАТ — 1 крок: дата початку
+    if state.get("step") == "update_date_start":
+        try:
+            date_start = datetime.strptime(text, "%d.%m.%Y").date()
+            state["date_start"] = date_start
+            state["step"] = "update_date_end"
+            update.message.reply_text("📅 Введіть нову дату закінчення ліцензії (ДД.ММ.РРРР):")
+        except:
+            update.message.reply_text("❌ Невірний формат дати. Використовуйте ДД.ММ.РРРР")
+        return
+
+    # ОНОВЛЕННЯ ДАТ — 2 крок: дата кінця
+    if state.get("step") == "update_date_end":
+        try:
+            date_end = datetime.strptime(text, "%d.%m.%Y").date()
+            key = state.get("license_key") or context.user_data.get("last_license_key")
+            save_license(key, state["date_start"], date_end)
+            update.message.reply_text("✅ Дати оновлено!", reply_markup=ReplyKeyboardRemove())
+            user_states.pop(chat_id, None)
+        except:
+            update.message.reply_text("❌ Невірний формат дати. Використовуйте ДД.ММ.РРРР")
         return
 
     if state["step"] == "choose_type":
@@ -125,6 +147,7 @@ def handle_message(update: Update, context: CallbackContext):
                    f"⏳ Залишилось: {days_left} днів")
             buttons = [[InlineKeyboardButton("🔄 Оновити дати", callback_data="update_dates")]]
             reply_markup = InlineKeyboardMarkup(buttons)
+            context.user_data["last_license_key"] = key  # Зберігаємо для update
             update.message.reply_text(msg, reply_markup=reply_markup)
             user_states.pop(chat_id, None)
             return
@@ -158,7 +181,11 @@ def handle_callback(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     chat_id = query.message.chat.id
-    user_states[chat_id] = {"step": "enter_date_start"}
+    license_key = context.user_data.get("last_license_key")
+    user_states[chat_id] = {
+        "step": "update_date_start",
+        "license_key": license_key
+    }
     query.message.reply_text("📅 Введіть нову дату початку ліцензії (ДД.ММ.РРРР):")
 
 def risk(update: Update, context: CallbackContext):
@@ -217,7 +244,7 @@ def check_licenses_job():
                             print(f"Не вдалося надіслати повідомлення {user_id}: {e}")
 
 def main():
-    global updater  # updater має бути глобальним для job
+    global updater
     updater = Updater(BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
 
