@@ -6,6 +6,7 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKey
 from telegram.ext import (
     Updater, CommandHandler, MessageHandler, CallbackQueryHandler, Filters, CallbackContext
 )
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # === Конфігурація ===
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
@@ -147,12 +148,43 @@ def handle_callback(update: Update, context: CallbackContext):
     user_states[chat_id] = {"step": "enter_date_start"}
     query.message.reply_text("📅 Введіть нову дату початку ліцензії (ДД.ММ.РРРР):")
 
+# ========== JOB ДЛЯ НАГАДУВАННЯ ==========
+def check_licenses_job():
+    now = datetime.now().date()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT license_key, start_date, end_date FROM licenses")
+            for license_key, start_date, end_date in cur.fetchall():
+                try:
+                    end = datetime.strptime(end_date, "%Y-%m-%d").date()
+                except:
+                    continue  # Якщо дата зіпсована — ігнор
+                days_left = (end - now).days
+                if 0 < days_left <= 3:
+                    for user_id in ALLOWED_USER_IDS:
+                        msg = (
+                            f"⏰ УВАГА! Ліцензія {license_key}\n"
+                            f"Завершується через {days_left} дні!\n"
+                            f"Дата завершення: {end.strftime('%d.%m.%Y')}\n"
+                            f"Терміново поновіть ліцензію!"
+                        )
+                        try:
+                            updater.bot.send_message(chat_id=user_id, text=msg)
+                        except Exception as e:
+                            print(f"Не вдалося надіслати повідомлення {user_id}: {e}")
+
 def main():
+    global updater  # updater має бути глобальним для job
     updater = Updater(BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
     dp.add_handler(CallbackQueryHandler(handle_callback))
+
+    # Запускаємо JOB на фоні
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(check_licenses_job, "interval", hours=1)
+    scheduler.start()
 
     print("✅ Бот запущено")
     updater.start_polling()
