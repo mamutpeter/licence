@@ -7,6 +7,7 @@ from telegram.ext import (
     Updater, CommandHandler, MessageHandler, CallbackQueryHandler, Filters, CallbackContext
 )
 from apscheduler.schedulers.background import BackgroundScheduler
+import pytz  # <-- ДОДАЙ ЦЕЙ ІМПОРТ
 
 # === Конфігурація ===
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
@@ -182,7 +183,7 @@ def main():
     dp.add_handler(CallbackQueryHandler(handle_callback))
 
     # Запускаємо JOB на фоні
-    scheduler = BackgroundScheduler()
+    scheduler = BackgroundScheduler(timezone=pytz.timezone('Europe/Kiev'))  # <--- Виправлено!
     scheduler.add_job(check_licenses_job, "interval", hours=1)
     scheduler.start()
 
