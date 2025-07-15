@@ -255,7 +255,7 @@ def main():
     dp.add_handler(CallbackQueryHandler(handle_callback))
 
     scheduler = BackgroundScheduler(timezone=pytz.timezone('Europe/Kiev'))
-    scheduler.add_job(check_licenses_job, "interval", minutes=1)
+    scheduler.add_job(check_licenses_job, "interval", hours=1)
     scheduler.start()
 
     print("✅ Бот запущено")
